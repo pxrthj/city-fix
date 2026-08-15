@@ -31,30 +31,22 @@ interface AuthContextType {
     loading: boolean;
     signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
     signUp: (email: string, password: string, fullName: string, ward?: string) => Promise<{ error: Error | null }>;
+    signInWithGoogle: () => Promise<{ error: Error | null }>;
+    sendEmailOtp: (email: string, fullName?: string, ward?: string) => Promise<{ error: Error | null }>;
+    verifyEmailOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
+    updateProfile: (updates: Partial<UserProfile>) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * Strict Domain Parser:
- * - Checks the domain strictly AFTER the '@'
- * - Supervisor: domain starts with 'supervisor.' (e.g. name@supervisor.ves.ac.in) or exact 'supervisor@ves.ac.in'
- * - Field Worker: '@ves.ac.in' or '@worker.cityfix.in'
- * - Citizen: '@gmail.com', '@yahoo.com', or any incomplete input
- */
 export function determineRoleFromEmail(email: string): UserRole {
     const normalized = email.toLowerCase().trim();
-
-    // While typing or if no '@' is present, default to citizen (keeps ward dropdown visible)
-    if (!normalized.includes('@')) {
-        return 'citizen';
-    }
+    if (!normalized.includes('@')) return 'citizen';
 
     const parts = normalized.split('@');
     const domain = parts[1] || '';
 
-    // 1. Supervisor Domain Matching
     if (
         domain.startsWith('supervisor.') ||
         domain === 'supervisor.ves.ac.in' ||
@@ -65,7 +57,6 @@ export function determineRoleFromEmail(email: string): UserRole {
         return 'supervisor';
     }
 
-    // 2. Field Worker Domain Matching
     if (
         domain === 'ves.ac.in' ||
         domain === 'worker.cityfix.in' ||
@@ -74,7 +65,6 @@ export function determineRoleFromEmail(email: string): UserRole {
         return 'field_worker';
     }
 
-    // 3. Citizen (Default for all other domains)
     return 'citizen';
 }
 
@@ -95,15 +85,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .single();
 
             if (error || !data) {
-                const userWard = (authUser.user_metadata?.ward as string) || (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
+                const userWard =
+                    (authUser.user_metadata?.ward as string) ||
+                    (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
+                const fullName =
+                    (authUser.user_metadata?.full_name as string) ||
+                    (authUser.user_metadata?.name as string) ||
+                    'User';
+
                 const newProfile: UserProfile = {
                     id: authUser.id,
-                    full_name: (authUser.user_metadata?.full_name as string) || 'User',
+                    full_name: fullName,
                     phone: null,
                     ward: userWard,
                     role: calculatedRole,
-                    department: calculatedRole === 'supervisor' ? 'Municipal Engineering' : calculatedRole === 'field_worker' ? 'Field Operations' : null,
-                    badge_id: calculatedRole === 'field_worker' ? `FW-${authUser.id.slice(0, 4).toUpperCase()}` : null,
+                    department:
+                        calculatedRole === 'supervisor'
+                            ? 'Municipal Engineering'
+                            : calculatedRole === 'field_worker'
+                                ? 'Field Operations'
+                                : null,
+                    badge_id:
+                        calculatedRole === 'field_worker'
+                            ? `FW-${authUser.id.slice(0, 4).toUpperCase()}`
+                            : null,
                 };
                 await supabase.from('profiles').upsert(newProfile);
                 setProfile(newProfile);
@@ -130,7 +135,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setLoading(false);
         });
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
             if (session?.user) {
@@ -151,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signUp = async (email: string, password: string, fullName: string, ward?: string) => {
         const role = determineRoleFromEmail(email);
-        const assignedWard = role === 'supervisor' ? 'Municipal HQ (All Wards)' : (ward || WARDS[0]);
+        const assignedWard = role === 'supervisor' ? 'Municipal HQ (All Wards)' : ward || WARDS[0];
 
         const { data, error } = await supabase.auth.signUp({
             email,
@@ -166,7 +173,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 phone: null,
                 ward: assignedWard,
                 role,
-                department: role === 'supervisor' ? 'Municipal Engineering' : role === 'field_worker' ? 'Field Operations' : null,
+                department:
+                    role === 'supervisor'
+                        ? 'Municipal Engineering'
+                        : role === 'field_worker'
+                            ? 'Field Operations'
+                            : null,
                 badge_id: role === 'field_worker' ? `FW-${data.user.id.slice(0, 4).toUpperCase()}` : null,
             };
             await supabase.from('profiles').upsert(newProfile);
@@ -176,13 +188,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error };
     };
 
+    const signInWithGoogle = async () => {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin,
+            },
+        });
+        return { error };
+    };
+
+    const sendEmailOtp = async (email: string, fullName?: string, ward?: string) => {
+        const role = determineRoleFromEmail(email);
+        const assignedWard = role === 'supervisor' ? 'Municipal HQ (All Wards)' : ward || WARDS[0];
+
+        const { error } = await supabase.auth.signInWithOtp({
+            email,
+            options: {
+                data: { full_name: fullName || 'User', role, ward: assignedWard },
+                shouldCreateUser: true,
+            },
+        });
+        return { error };
+    };
+
+    const verifyEmailOtp = async (email: string, token: string) => {
+        const { data, error } = await supabase.auth.verifyOtp({
+            email,
+            token,
+            type: 'email',
+        });
+        if (!error && data.user) {
+            await syncProfile(data.user);
+        }
+        return { error };
+    };
+
+    const updateProfile = async (updates: Partial<UserProfile>) => {
+        if (!user) return { error: new Error('User not authenticated') };
+
+        const { error } = await supabase
+            .from('profiles')
+            .update(updates)
+            .eq('id', user.id);
+
+        if (!error && profile) {
+            setProfile({ ...profile, ...updates });
+        }
+        return { error };
+    };
+
     const signOut = async () => {
         await supabase.auth.signOut();
         setProfile(null);
     };
 
     return (
-        <AuthContext.Provider value={{ user, profile, session, loading, signIn, signUp, signOut }}>
+        <AuthContext.Provider
+            value={{
+                user,
+                profile,
+                session,
+                loading,
+                signIn,
+                signUp,
+                signInWithGoogle,
+                sendEmailOtp,
+                verifyEmailOtp,
+                updateProfile,
+                signOut,
+            }}
+        >
             {children}
         </AuthContext.Provider>
     );
