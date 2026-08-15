@@ -44,7 +44,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState(CATEGORIES[0].id);
     const [severity, setSeverity] = useState('Medium');
-    const [selectedWard, setSelectedWard] = useState<string>(profile?.ward && profile.ward !== 'Municipal HQ (All Wards)' ? profile.ward : WARDS[0]);
+    const [selectedWard, setSelectedWard] = useState<string>(
+        profile?.ward && profile.ward !== 'Municipal HQ (All Wards)' ? profile.ward : WARDS[0]
+    );
     const [description, setDescription] = useState('');
 
     const [latitude, setLatitude] = useState<number | null>(null);
@@ -111,19 +113,26 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
             return;
         }
 
+        if (!title.trim()) {
+            setFormError('Please provide an issue title.');
+            return;
+        }
+
         setLoading(true);
 
         try {
+            // 1. Upload photo to Supabase Storage
             const { url: imageUrl, error: uploadErr } = await uploadIssuePhoto(selectedFile, user.id);
             if (uploadErr || !imageUrl) {
                 throw new Error(uploadErr?.message || 'Failed to upload photo to storage.');
             }
 
+            // 2. Insert into PostgreSQL
             const { data: newIssue, error: dbError } = await supabase
                 .from('issues')
                 .insert({
-                    title,
-                    description,
+                    title: title.trim(),
+                    description: description.trim(),
                     category,
                     severity,
                     latitude: latitude || 19.0760,
@@ -138,6 +147,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
 
             if (dbError) throw dbError;
 
+            // 3. Log initial audit timeline event
             if (newIssue) {
                 await supabase.from('issue_timeline').insert({
                     issue_id: newIssue.id,
@@ -219,7 +229,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         />
                     </div>
 
-                    {/* Title */}
+                    {/* Issue Title */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Issue Title *
@@ -234,7 +244,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         />
                     </div>
 
-                    {/* Incident Ward Selection */}
+                    {/* Incident Ward */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 flex items-center gap-1.5">
                             <MapPin className="w-3.5 h-3.5 text-blue-600" />
@@ -251,7 +261,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         </select>
                     </div>
 
-                    {/* Category */}
+                    {/* Category Selection */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Category *
@@ -273,7 +283,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         </div>
                     </div>
 
-                    {/* Urgency */}
+                    {/* Severity Selection */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Assessed Urgency
@@ -295,7 +305,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         </div>
                     </div>
 
-                    {/* GPS Detection */}
+                    {/* Geolocation Detection */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             GPS Coordinates
