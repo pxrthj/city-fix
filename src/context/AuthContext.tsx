@@ -77,41 +77,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const syncProfile = async (authUser: User) => {
         const calculatedRole = determineRoleFromEmail(authUser.email || '');
 
+        const userWard =
+            (authUser.user_metadata?.ward as string) ||
+            (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
+        const fullName =
+            (authUser.user_metadata?.full_name as string) ||
+            (authUser.user_metadata?.name as string) ||
+            authUser.email?.split('@')[0] ||
+            'Citizen User';
+
+        const fallbackProfile: UserProfile = {
+            id: authUser.id,
+            full_name: fullName,
+            phone: null,
+            ward: userWard,
+            role: calculatedRole,
+            department:
+                calculatedRole === 'supervisor'
+                    ? 'Municipal Engineering'
+                    : calculatedRole === 'field_worker'
+                        ? 'Field Operations'
+                        : null,
+            badge_id:
+                calculatedRole === 'field_worker'
+                    ? `FW-${authUser.id.slice(0, 4).toUpperCase()}`
+                    : null,
+        };
+
         try {
+            // Use maybeSingle() to avoid PGRST116 error when user does not exist in DB yet
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', authUser.id)
-                .single();
+                .maybeSingle();
 
             if (error || !data) {
-                const userWard =
-                    (authUser.user_metadata?.ward as string) ||
-                    (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
-                const fullName =
-                    (authUser.user_metadata?.full_name as string) ||
-                    (authUser.user_metadata?.name as string) ||
-                    'User';
-
-                const newProfile: UserProfile = {
-                    id: authUser.id,
-                    full_name: fullName,
-                    phone: null,
-                    ward: userWard,
-                    role: calculatedRole,
-                    department:
-                        calculatedRole === 'supervisor'
-                            ? 'Municipal Engineering'
-                            : calculatedRole === 'field_worker'
-                                ? 'Field Operations'
-                                : null,
-                    badge_id:
-                        calculatedRole === 'field_worker'
-                            ? `FW-${authUser.id.slice(0, 4).toUpperCase()}`
-                            : null,
-                };
-                await supabase.from('profiles').upsert(newProfile);
-                setProfile(newProfile);
+                await supabase.from('profiles').upsert(fallbackProfile);
+                setProfile(fallbackProfile);
             } else {
                 if (data.role !== calculatedRole) {
                     await supabase.from('profiles').update({ role: calculatedRole }).eq('id', authUser.id);
@@ -121,34 +124,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             }
         } catch {
-            setProfile(null);
+            // Always fallback to memory state so UI doesn't kick user out
+            setProfile(fallbackProfile);
         }
     };
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setSession(session);
-            setUser(session?.user ?? null);
-            if (session?.user) {
-                syncProfile(session.user);
+        let isMounted = true;
+
+        const initializeAuth = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!isMounted) return;
+
+                if (session?.user) {
+                    setSession(session);
+                    setUser(session.user);
+                    await syncProfile(session.user);
+                } else {
+                    setSession(null);
+                    setUser(null);
+                    setProfile(null);
+                }
+            } catch (err) {
+                console.error('Session init error:', err);
+            } finally {
+                if (isMounted) setLoading(false);
             }
-            setLoading(false);
-        });
+        };
+
+        initializeAuth();
 
         const {
             data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
-            setSession(session);
-            setUser(session?.user ?? null);
+        } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            if (!isMounted) return;
+
             if (session?.user) {
-                syncProfile(session.user);
+                setSession(session);
+                setUser(session.user);
+                await syncProfile(session.user);
             } else {
+                setSession(null);
+                setUser(null);
                 setProfile(null);
             }
             setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            isMounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const signIn = async (email: string, password: string) => {
@@ -192,7 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin,
+                redirectTo: window.location.origin + window.location.pathname,
             },
         });
         return { error };
