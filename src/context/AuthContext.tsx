@@ -23,7 +23,7 @@ interface AuthContextType {
     signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
     signUp: (email: string, password: string, fullName: string, role?: UserRole) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
-    switchDemoRole: (role: UserRole) => void;
+    switchDemoRole: (role: UserRole) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,6 +36,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const fetchProfile = async (userId: string, userMeta?: Record<string, unknown>) => {
         try {
+            const savedRole = (localStorage.getItem('cityfix_demo_role') as UserRole) || null;
+
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
@@ -48,12 +50,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     full_name: (userMeta?.full_name as string) || 'Citizen User',
                     phone: null,
                     ward: 'Ward 14 (Bandra West)',
-                    role: ((userMeta?.role as string) as UserRole) || 'citizen',
+                    role: savedRole || ((userMeta?.role as string) as UserRole) || 'citizen',
                 };
                 await supabase.from('profiles').upsert(fallbackProfile);
                 setProfile(fallbackProfile);
             } else {
-                setProfile(data as UserProfile);
+                setProfile({
+                    ...(data as UserProfile),
+                    role: savedRole || (data.role as UserRole) || 'citizen',
+                });
             }
         } catch {
             setProfile(null);
@@ -105,6 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role,
             };
             await supabase.from('profiles').insert(newProfile);
+            localStorage.setItem('cityfix_demo_role', role);
             setProfile(newProfile);
         }
 
@@ -112,13 +118,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const signOut = async () => {
+        localStorage.removeItem('cityfix_demo_role');
         await supabase.auth.signOut();
         setProfile(null);
     };
 
-    const switchDemoRole = (role: UserRole) => {
+    const switchDemoRole = async (role: UserRole) => {
+        localStorage.setItem('cityfix_demo_role', role);
         if (profile) {
             setProfile({ ...profile, role });
+        }
+        if (user) {
+            await supabase.from('profiles').update({ role }).eq('id', user.id);
         }
     };
 

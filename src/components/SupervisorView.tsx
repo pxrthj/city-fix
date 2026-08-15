@@ -6,8 +6,15 @@ import {
     Send,
     Loader2,
     X,
-    MapPin
+    MapPin,
+    AlertCircle
 } from 'lucide-react';
+
+const FALLBACK_WORKERS = [
+    { id: '00000000-0000-0000-0000-000000000001', full_name: 'Suresh Shinde', department: 'Roads & Infrastructure', badge_id: 'FW-1042', phone: '+91 98201 12345' },
+    { id: '00000000-0000-0000-0000-000000000002', full_name: 'Mahesh Patel', department: 'Sanitation & Solid Waste', badge_id: 'FW-1088', phone: '+91 98202 23456' },
+    { id: '00000000-0000-0000-0000-000000000003', full_name: 'Vikram Jadhav', department: 'Electrical & Streetlights', badge_id: 'FW-1105', phone: '+91 98203 34567' },
+];
 
 export interface SupervisorViewProps {
     issues: any[];
@@ -17,12 +24,12 @@ export interface SupervisorViewProps {
 
 export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTab, onRefresh }) => {
     const [filter, setFilter] = useState<'all' | 'unassigned' | 'in_progress' | 'resolved'>('all');
-    const [workers, setWorkers] = useState<any[]>([]);
+    const [workers, setWorkers] = useState<any[]>(FALLBACK_WORKERS);
     const [assigningIssue, setAssigningIssue] = useState<any | null>(null);
-    const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
+    const [selectedWorkerId, setSelectedWorkerId] = useState<string>(FALLBACK_WORKERS[0].id);
     const [assignLoading, setAssignLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-    // Fetch field crew profiles
     useEffect(() => {
         const fetchWorkers = async () => {
             const { data } = await supabase
@@ -50,20 +57,28 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
 
     const handleAssignWorker = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!assigningIssue || !selectedWorkerId) return;
+        setErrorMessage(null);
+
+        const workerId = selectedWorkerId || workers[0]?.id;
+        if (!assigningIssue || !workerId) {
+            setErrorMessage('Please select a field worker.');
+            return;
+        }
 
         setAssignLoading(true);
-        const worker = workers.find(w => w.id === selectedWorkerId);
+        const worker = workers.find(w => w.id === workerId) || workers[0];
 
         try {
-            await supabase
+            const { error: updateErr } = await supabase
                 .from('issues')
                 .update({
-                    assigned_worker_id: selectedWorkerId,
+                    assigned_worker_id: workerId,
                     status: 'assigned',
                     updated_at: new Date().toISOString(),
                 })
                 .eq('id', assigningIssue.id);
+
+            if (updateErr) throw new Error(updateErr.message);
 
             await supabase.from('issue_timeline').insert({
                 issue_id: assigningIssue.id,
@@ -74,6 +89,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
 
             setAssigningIssue(null);
             onRefresh();
+        } catch (err: any) {
+            setErrorMessage(err?.message || 'Failed to dispatch technician.');
         } finally {
             setAssignLoading(false);
         }
@@ -83,7 +100,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
         <div className="space-y-4">
             {activeTab === 'triage' && (
                 <>
-                    {/* Triage Status Metrics */}
                     <div className="grid grid-cols-3 gap-2">
                         <div className="bg-white p-3 rounded-2xl border border-slate-200 text-center shadow-xs">
                             <div className="text-lg font-black text-rose-600">{unassignedCount}</div>
@@ -99,7 +115,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         </div>
                     </div>
 
-                    {/* Filters */}
                     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                         {(['all', 'unassigned', 'in_progress', 'resolved'] as const).map((f) => (
                             <button
@@ -115,7 +130,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         ))}
                     </div>
 
-                    {/* Triage Ticket Feed */}
                     <div className="space-y-3">
                         {filteredIssues.length === 0 ? (
                             <div className="bg-white rounded-2xl p-8 text-center border border-slate-200">
@@ -157,7 +171,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                             </div>
                                         </div>
 
-                                        {/* Dispatch Workflow */}
                                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
                                             <div className="text-xs font-medium text-slate-600">
                                                 {isAssigned ? (
@@ -171,7 +184,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
 
                                             {issue.status !== 'resolved' && (
                                                 <button
-                                                    onClick={() => setAssigningIssue(issue)}
+                                                    onClick={() => {
+                                                        setErrorMessage(null);
+                                                        setAssigningIssue(issue);
+                                                    }}
                                                     className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition active:scale-[0.98] shadow-xs shadow-blue-600/30"
                                                 >
                                                     <Send className="w-3 h-3" />
@@ -219,7 +235,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                 </div>
             )}
 
-            {/* Assignment Modal */}
             {assigningIssue && (
                 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
                     <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 space-y-4 animate-slide-up">
@@ -232,6 +247,13 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
+
+                        {errorMessage && (
+                            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>{errorMessage}</span>
+                            </div>
+                        )}
 
                         <form onSubmit={handleAssignWorker} className="space-y-4">
                             <div>

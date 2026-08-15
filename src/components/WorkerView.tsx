@@ -7,7 +7,8 @@ import {
     CheckCircle2,
     Phone,
     Wrench,
-    ShieldAlert
+    ShieldAlert,
+    Loader2
 } from 'lucide-react';
 import { ResolutionModal } from './ResolutionModal';
 
@@ -21,16 +22,23 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
     const [resolvingIssue, setResolvingIssue] = useState<any | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    // Unresolved tasks for field queue
+    // Filter unresolved issues
     const workerIssues = issues.filter(i => i.status !== 'resolved' && i.status !== 'closed');
 
     const handleStartJob = async (issueId: string) => {
         setActionLoading(issueId);
         try {
-            await supabase
+            const { error: updateErr } = await supabase
                 .from('issues')
-                .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+                .update({
+                    status: 'in_progress',
+                    updated_at: new Date().toISOString()
+                })
                 .eq('id', issueId);
+
+            if (updateErr) {
+                throw new Error(updateErr.message);
+            }
 
             await supabase.from('issue_timeline').insert({
                 issue_id: issueId,
@@ -40,6 +48,8 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
             });
 
             onRefresh();
+        } catch (err: any) {
+            alert(`Could not start job: ${err?.message || 'Database error'}`);
         } finally {
             setActionLoading(null);
         }
@@ -54,7 +64,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
         <div className="space-y-4">
             {activeTab === 'tasks' && (
                 <>
-                    {/* Worker Status Banner */}
                     <div className="bg-slate-900 text-white p-4 rounded-3xl shadow-lg border border-slate-800 flex items-center justify-between">
                         <div>
                             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
@@ -70,7 +79,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                         </div>
                     </div>
 
-                    {/* Task Queue Cards */}
                     <div className="space-y-3">
                         <div className="flex items-center justify-between px-1">
                             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Priority Dispatch Queue</h3>
@@ -81,7 +89,7 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                             <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 space-y-2">
                                 <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
                                 <h4 className="font-bold text-slate-800">All Field Tasks Cleared</h4>
-                                <p className="text-xs text-slate-500">No pending repairs assigned to your shift right now.</p>
+                                <p className="text-xs text-slate-500">No pending repairs assigned right now.</p>
                             </div>
                         ) : (
                             workerIssues.map((issue) => {
@@ -94,7 +102,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                         className={`bg-white rounded-2xl border p-4 shadow-xs transition space-y-3 ${isCritical ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200'
                                             }`}
                                     >
-                                        {/* Urgency & Category */}
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${isCritical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'
@@ -111,7 +118,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                             </span>
                                         </div>
 
-                                        {/* Site Details */}
                                         <div className="flex gap-3 items-center">
                                             <img
                                                 src={issue.image_url}
@@ -128,7 +134,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                             </div>
                                         </div>
 
-                                        {/* Quick Routing & Action Buttons */}
                                         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                                             <button
                                                 onClick={() => handleOpenGoogleMaps(issue.latitude || 19.0760, issue.longitude || 72.8777)}
@@ -144,7 +149,7 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                                     disabled={actionLoading === issue.id}
                                                     className="py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
                                                 >
-                                                    <Clock className="w-3.5 h-3.5" />
+                                                    {actionLoading === issue.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
                                                     <span>{actionLoading === issue.id ? 'Starting...' : 'Start Job'}</span>
                                                 </button>
                                             ) : (
@@ -199,28 +204,9 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                             </button>
                         </div>
                     </div>
-
-                    <div className="space-y-2">
-                        <div className="text-xs font-bold uppercase tracking-wider text-slate-500">On-Ground Incident Logging</div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                onClick={() => alert('Material Shortage notice logged for your assigned ward.')}
-                                className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-left text-xs font-bold text-slate-700"
-                            >
-                                ⚠️ Asphalt / Material Shortage
-                            </button>
-                            <button
-                                onClick={() => alert('Traffic / Police Diversion delay logged.')}
-                                className="p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-left text-xs font-bold text-slate-700"
-                            >
-                                🚧 Police Roadblock / Traffic
-                            </button>
-                        </div>
-                    </div>
                 </div>
             )}
 
-            {/* Resolution Proof-of-Work Modal */}
             {resolvingIssue && (
                 <ResolutionModal
                     issue={resolvingIssue}
