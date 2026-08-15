@@ -1,8 +1,8 @@
 import React from 'react';
-import { Home, PlusCircle, Ticket, User, Wrench, PhoneCall } from 'lucide-react';
+import { Home, PlusCircle, Ticket, User, Wrench, PhoneCall, LayoutDashboard, Users } from 'lucide-react';
 import type { UserRole } from '../context/AuthContext';
 
-interface BottomNavProps {
+export interface BottomNavProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
     onOpenReport: () => void;
@@ -10,6 +10,7 @@ interface BottomNavProps {
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, onOpenReport, role }) => {
+    // 1. Field Worker Persona Navigation
     if (role === 'field_worker') {
         return (
             <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2">
@@ -27,7 +28,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
                         className={`flex flex-col items-center py-1 transition ${activeTab === 'supervisor' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}
                     >
                         <PhoneCall className="w-5 h-5" />
-                        <span className="text-[10px] mt-0.5">Supervisor</span>
+                        <span className="text-[10px] mt-0.5">Supervisor Desk</span>
                     </button>
 
                     <button
@@ -42,6 +43,40 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
         );
     }
 
+    // 2. Supervisor Persona Navigation
+    if (role === 'supervisor') {
+        return (
+            <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2">
+                <div className="max-w-md mx-auto grid grid-cols-3 gap-1">
+                    <button
+                        onClick={() => onTabChange('triage')}
+                        className={`flex flex-col items-center py-1 transition ${activeTab === 'triage' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}
+                    >
+                        <LayoutDashboard className="w-5 h-5" />
+                        <span className="text-[10px] mt-0.5">Ward Triage</span>
+                    </button>
+
+                    <button
+                        onClick={() => onTabChange('crew')}
+                        className={`flex flex-col items-center py-1 transition ${activeTab === 'crew' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}
+                    >
+                        <Users className="w-5 h-5" />
+                        <span className="text-[10px] mt-0.5">Field Crew</span>
+                    </button>
+
+                    <button
+                        onClick={() => onTabChange('profile')}
+                        className={`flex flex-col items-center py-1 transition ${activeTab === 'profile' ? 'text-blue-600 font-bold' : 'text-slate-400'}`}
+                    >
+                        <User className="w-5 h-5" />
+                        <span className="text-[10px] mt-0.5">Profile</span>
+                    </button>
+                </div>
+            </nav>
+        );
+    }
+
+    // 3. Citizen Persona Navigation (Default)
     return (
         <nav className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2">
             <div className="max-w-md mx-auto grid grid-cols-4 gap-1 items-center">
@@ -82,3 +117,5 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, on
         </nav>
     );
 };
+
+export default BottomNav;
