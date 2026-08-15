@@ -92,6 +92,22 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Check URL parameters for OAuth errors (from Supabase / Google OAuth callback)
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    
+    const urlError = searchParams.get('error_description') || searchParams.get('error') ||
+                     hashParams.get('error_description') || hashParams.get('error');
+
+    if (urlError) {
+      const formatted = decodeURIComponent(urlError.replace(/\+/g, ' '));
+      setAuthError(`OAuth Error: ${formatted}`);
+      // Clean up URL without reloading to avoid sticky error state
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
+  useEffect(() => {
     if (user) {
       fetchIssues();
     }
