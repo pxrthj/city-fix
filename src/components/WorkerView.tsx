@@ -8,7 +8,8 @@ import {
     Phone,
     Wrench,
     ShieldAlert,
-    Loader2
+    Loader2,
+    AlertTriangle
 } from 'lucide-react';
 import { ResolutionModal } from './ResolutionModal';
 
@@ -22,7 +23,6 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
     const [resolvingIssue, setResolvingIssue] = useState<any | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    // Filter unresolved issues
     const workerIssues = issues.filter(i => i.status !== 'resolved' && i.status !== 'closed');
 
     const handleStartJob = async (issueId: string) => {
@@ -36,20 +36,18 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                 })
                 .eq('id', issueId);
 
-            if (updateErr) {
-                throw new Error(updateErr.message);
-            }
+            if (updateErr) throw new Error(updateErr.message);
 
             await supabase.from('issue_timeline').insert({
                 issue_id: issueId,
                 status: 'in_progress',
-                message: 'Field technician has arrived on site and started repair work.',
+                message: 'Field technician has arrived on site and commenced repairs.',
                 actor_name: 'Field Crew',
             });
 
             onRefresh();
         } catch (err: any) {
-            alert(`Could not start job: ${err?.message || 'Database error'}`);
+            alert(`Error starting job: ${err?.message || 'Database error'}`);
         } finally {
             setActionLoading(null);
         }
@@ -89,25 +87,32 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                             <div className="bg-white rounded-2xl p-8 text-center border border-slate-200 space-y-2">
                                 <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
                                 <h4 className="font-bold text-slate-800">All Field Tasks Cleared</h4>
-                                <p className="text-xs text-slate-500">No pending repairs assigned right now.</p>
+                                <p className="text-xs text-slate-500">No pending repairs assigned to your shift right now.</p>
                             </div>
                         ) : (
                             workerIssues.map((issue) => {
+                                const isReopened = issue.status === 'reopened';
                                 const isCritical = issue.severity === 'Critical' || issue.severity === 'High';
                                 const isInProgress = issue.status === 'in_progress';
 
                                 return (
                                     <div
                                         key={issue.id}
-                                        className={`bg-white rounded-2xl border p-4 shadow-xs transition space-y-3 ${isCritical ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200'
+                                        className={`bg-white rounded-2xl border p-4 shadow-xs transition space-y-3 ${isReopened ? 'border-rose-400 ring-2 ring-rose-200 bg-rose-50/15' : isCritical ? 'border-amber-300 ring-1 ring-amber-200' : 'border-slate-200'
                                             }`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${isCritical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'
-                                                    }`}>
-                                                    {issue.severity} Urgency
-                                                </span>
+                                            <div className="flex items-center gap-1.5">
+                                                {isReopened ? (
+                                                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-rose-600 text-white flex items-center gap-1 animate-pulse">
+                                                        <AlertTriangle className="w-3 h-3" /> Reopened by Supervisor
+                                                    </span>
+                                                ) : (
+                                                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${isCritical ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'
+                                                        }`}>
+                                                        {issue.severity} Urgency
+                                                    </span>
+                                                )}
                                                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">
                                                     {issue.category}
                                                 </span>
@@ -134,6 +139,13 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                             </div>
                                         </div>
 
+                                        {/* Supervisor Reopen Note Callout */}
+                                        {issue.supervisor_reopen_notes && (
+                                            <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl text-xs text-rose-900">
+                                                <strong>⚠️ Supervisor Rework Instructions:</strong> {issue.supervisor_reopen_notes}
+                                            </div>
+                                        )}
+
                                         <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                                             <button
                                                 onClick={() => handleOpenGoogleMaps(issue.latitude || 19.0760, issue.longitude || 72.8777)}
@@ -150,7 +162,7 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                                     className="py-2 px-3 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition active:scale-[0.98]"
                                                 >
                                                     {actionLoading === issue.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
-                                                    <span>{actionLoading === issue.id ? 'Starting...' : 'Start Job'}</span>
+                                                    <span>{actionLoading === issue.id ? 'Starting...' : 'Start Repair'}</span>
                                                 </button>
                                             ) : (
                                                 <button
@@ -158,7 +170,7 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                                     className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition active:scale-[0.98] shadow-xs shadow-emerald-600/30"
                                                 >
                                                     <CheckCircle2 className="w-3.5 h-3.5" />
-                                                    <span>Resolve Issue</span>
+                                                    <span>Submit New Proof</span>
                                                 </button>
                                             )}
                                         </div>
@@ -197,10 +209,10 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
                                 <Phone className="w-3.5 h-3.5" /> Call Supervisor
                             </a>
                             <button
-                                onClick={() => alert('SOS Delay notification logged and sent to Ward 14 Control Room.')}
+                                onClick={() => alert('Delay notification logged to Ward 14 Control Desk.')}
                                 className="py-2.5 bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 hover:bg-rose-100"
                             >
-                                <ShieldAlert className="w-3.5 h-3.5" /> Trigger Delay Alert
+                                <ShieldAlert className="w-3.5 h-3.5" /> Log Material Delay
                             </button>
                         </div>
                     </div>

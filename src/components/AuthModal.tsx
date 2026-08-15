@@ -1,168 +1,151 @@
-import { useState, type FC, type FormEvent } from 'react';
-import { X, Mail, Lock, LogIn, UserPlus, Loader2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { X, Mail, Lock, User, AlertCircle, Loader2, Info } from 'lucide-react';
 
 interface AuthModalProps {
     isOpen: boolean;
     onClose: () => void;
 }
 
-export const AuthModal: FC<AuthModalProps> = ({ isOpen, onClose }) => {
-    const [isSignUp, setIsSignUp] = useState<boolean>(false);
-    const [email, setEmail] = useState<string>('');
-    const [password, setPassword] = useState<string>('');
-    const [loading, setLoading] = useState<boolean>(false);
-    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+    const { signIn, signUp } = useAuth();
+    const [isSignUp, setIsSignUp] = useState(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [fullName, setFullName] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
 
     if (!isOpen) return null;
 
-    const handleSubmit = async (e: FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
         setLoading(true);
-        setErrorMessage(null);
 
         try {
             if (isSignUp) {
-                // Execute Supabase User Registration
-                const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                });
-                if (error) throw error;
-                alert('Registration successful! You are now authenticated.');
+                if (!fullName.trim()) throw new Error('Please enter your full name');
+                const { error: signUpError } = await signUp(email, password, fullName);
+                if (signUpError) throw signUpError;
             } else {
-                // Execute Supabase User Login
-                const { error } = await supabase.auth.signInWithPassword({
-                    email,
-                    password,
-                });
-                if (error) throw error;
+                const { error: signInError } = await signIn(email, password);
+                if (signInError) throw signInError;
             }
-            // Reset form and close dialog
-            setEmail('');
-            setPassword('');
             onClose();
         } catch (err: any) {
-            setErrorMessage(err.message || 'An unexpected authentication error occurred.');
+            setError(err?.message || 'Authentication failed. Please verify credentials.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden relative border border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
+            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-5 animate-slide-up">
 
-                {/* Header Bar */}
-                <div className="flex items-center justify-between p-6 border-b border-slate-100">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
-                        <h2 className="text-xl font-bold text-slate-900">
-                            {isSignUp ? 'Create Citizen Account' : 'Welcome Back'}
+                        <h2 className="text-lg font-bold text-slate-900">
+                            {isSignUp ? 'Create CityFix Account' : 'Welcome to CityFix'}
                         </h2>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                            {isSignUp ? 'Join CityFix to report and track issues' : 'Sign in to access your civic dashboard'}
-                        </p>
+                        <p className="text-xs text-slate-500">Official Municipal Grievance Network</p>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-                    >
+                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                {/* Tab Switcher */}
-                <div className="flex border-b border-slate-100 bg-slate-50 p-1.5 m-6 mb-0 rounded-xl">
-                    <button
-                        type="button"
-                        onClick={() => { setIsSignUp(false); setErrorMessage(null); }}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${!isSignUp ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                    >
-                        Sign In
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => { setIsSignUp(true); setErrorMessage(null); }}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-lg transition-all ${isSignUp ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                            }`}
-                    >
-                        Sign Up
-                    </button>
+                {/* Domain Guidance Note */}
+                <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-3 text-[11px] text-slate-700 space-y-1">
+                    <div className="flex items-center gap-1 font-bold text-blue-900">
+                        <Info className="w-3.5 h-3.5 text-blue-600" /> Automatic Role Routing
+                    </div>
+                    <p>• <strong>@ves.ac.in:</strong> Field Technician Portal</p>
+                    <p>• <strong>supervisor@... / @supervisor.ves.ac.in:</strong> Ward Supervisor</p>
+                    <p>• <strong>Other emails (Gmail, etc.):</strong> Resident Citizen Portal</p>
                 </div>
 
-                {/* Dynamic Error Box */}
-                {errorMessage && (
-                    <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl font-medium flex items-center space-x-2">
-                        <span>⚠️</span>
-                        <span>{errorMessage}</span>
+                {error && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{error}</span>
                     </div>
                 )}
 
-                {/* Form Inputs */}
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-3.5">
+                    {isSignUp && (
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Full Name</label>
+                            <div className="relative">
+                                <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    required
+                                    value={fullName}
+                                    onChange={(e) => setFullName(e.target.value)}
+                                    placeholder="e.g., Jane Doe"
+                                    className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                            Email Address
-                        </label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Email Address</label>
                         <div className="relative">
-                            <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                             <input
                                 type="email"
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                placeholder="citizen@cityfix.org"
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all text-slate-900"
+                                placeholder="name@ves.ac.in or name@gmail.com"
+                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                            Password
-                        </label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Password</label>
                         <div className="relative">
-                            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                            <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                             <input
                                 type="password"
                                 required
-                                minLength={6}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
-                                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition-all text-slate-900"
+                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
                             />
                         </div>
-                        {isSignUp && (
-                            <p className="text-[11px] text-slate-400 mt-1">Must be at least 6 characters long.</p>
-                        )}
                     </div>
 
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-all shadow-md shadow-blue-600/20 flex items-center justify-center space-x-2 disabled:opacity-50 active:scale-[0.99]"
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-blue-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
-                        {loading ? (
-                            <>
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span>Contacting Supabase...</span>
-                            </>
-                        ) : isSignUp ? (
-                            <>
-                                <UserPlus className="w-4 h-4" />
-                                <span>Register Account</span>
-                            </>
-                        ) : (
-                            <>
-                                <LogIn className="w-4 h-4" />
-                                <span>Sign In</span>
-                            </>
-                        )}
+                        {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                        <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
                     </button>
                 </form>
+
+                <div className="text-center pt-1 border-t border-slate-100">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setIsSignUp(!isSignUp);
+                            setError(null);
+                        }}
+                        className="text-xs font-bold text-blue-600 hover:underline"
+                    >
+                        {isSignUp ? 'Already registered? Sign In' : "Don't have an account? Sign Up"}
+                    </button>
+                </div>
             </div>
         </div>
     );
 };
+
+export default AuthModal;
