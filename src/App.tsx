@@ -14,7 +14,8 @@ import {
   Sparkles,
   Phone,
   Mail,
-  Wrench
+  Wrench,
+  X
 } from 'lucide-react';
 
 export default function App() {
