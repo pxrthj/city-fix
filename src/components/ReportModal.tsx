@@ -202,7 +202,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     <Camera className="w-6 h-6" />
                                 </div>
                                 <div className="text-xs font-semibold text-slate-700">Tap to Capture or Upload Evidence</div>
-                                <div className="text-[11px] text-slate-400">JPEG, PNG, WebP up to 5MB</div>
+                                <div className="text-[11px] text-slate-400">JPEG, PNG, WebP up to 10MB</div>
                             </div>
                         ) : (
                             <div className="relative rounded-2xl overflow-hidden border border-slate-200 group h-44">
@@ -251,8 +251,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     type="button"
                                     onClick={() => setCategory(cat.id)}
                                     className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${category === cat.id
-                                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/30'
-                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/30'
+                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                                         }`}
                                 >
                                     {cat.label}
@@ -272,8 +272,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     type="button"
                                     onClick={() => setSeverity(s.id)}
                                     className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition ${severity === s.id
-                                            ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50 text-blue-900 font-extrabold'
-                                            : s.color
+                                        ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50 text-blue-900 font-extrabold'
+                                        : s.color
                                         }`}
                                 >
                                     {s.label}

@@ -12,8 +12,9 @@ export async function uploadIssuePhoto(file: File, userId: string): Promise<Uplo
             throw new Error('Please upload a JPEG, PNG, or WebP image.');
         }
 
-        if (file.size > 5 * 1024 * 1024) {
-            throw new Error('Image size exceeds 5MB limit.');
+
+        if (file.size > 10 * 1024 * 1024) {
+            throw new Error('Image size exceeds 10MB limit.');
         }
 
         const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
