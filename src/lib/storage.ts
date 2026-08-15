@@ -5,20 +5,15 @@ export interface UploadResult {
     error: Error | null;
 }
 
-/**
- * Uploads a local image file to the Supabase 'issue-photos' bucket
- * using a collision-proof path: userId/timestamp_randomHash.ext
- */
 export async function uploadIssuePhoto(file: File, userId: string): Promise<UploadResult> {
     try {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
         if (!allowedTypes.includes(file.type)) {
-            throw new Error('Invalid file format. Please upload JPEG, PNG, or WebP.');
+            throw new Error('Please upload a JPEG, PNG, or WebP image.');
         }
 
-        const maxSizeInBytes = 5 * 1024 * 1024; // 5 MB
-        if (file.size > maxSizeInBytes) {
-            throw new Error('File size exceeds the 5MB limit.');
+        if (file.size > 5 * 1024 * 1024) {
+            throw new Error('Image size exceeds 5MB limit.');
         }
 
         const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg';
@@ -29,20 +24,27 @@ export async function uploadIssuePhoto(file: File, userId: string): Promise<Uplo
             .from('issue-photos')
             .upload(filePath, file, {
                 cacheControl: '3600',
-                upsert: false,
+                upsert: true,
             });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+            throw new Error(uploadError.message || 'Storage upload rejected');
+        }
 
         const { data: urlData } = supabase.storage
             .from('issue-photos')
             .getPublicUrl(filePath);
 
+        if (!urlData?.publicUrl) {
+            throw new Error('Failed to generate public URL for photo.');
+        }
+
         return { url: urlData.publicUrl, error: null };
-    } catch (err: unknown) {
+    } catch (err: any) {
+        const msg = err?.message || (typeof err === 'string' ? err : 'Image upload failed');
         return {
             url: null,
-            error: err instanceof Error ? err : new Error('Image upload failed'),
+            error: new Error(msg),
         };
     }
 }

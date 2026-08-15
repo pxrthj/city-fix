@@ -73,7 +73,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                 setLocating(false);
             },
             () => {
-                setLocationError('Please enable GPS / Location permissions in browser.');
+                setLocationError('Please allow location access in your browser.');
                 setLocating(false);
             },
             { enableHighAccuracy: true, timeout: 8000 }
@@ -101,38 +101,47 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
         setFormError(null);
 
         if (!user) {
-            setFormError('Please sign in to submit a grievance ticket.');
+            setFormError('You must be signed in to submit a grievance.');
             return;
         }
 
         if (!selectedFile) {
-            setFormError('Please upload photo evidence of the issue.');
+            setFormError('Please attach a photo of the issue.');
             return;
         }
 
         setLoading(true);
 
         try {
+            // 1. Upload photo to Supabase Storage
             const { url: imageUrl, error: uploadErr } = await uploadIssuePhoto(selectedFile, user.id);
             if (uploadErr || !imageUrl) {
-                throw new Error(uploadErr?.message || 'Failed to upload photo evidence.');
+                throw new Error(uploadErr?.message || 'Failed to upload photo to storage.');
             }
 
-            const { data: newIssue, error: dbError } = await supabase.from('issues').insert({
-                title,
-                description,
-                category,
-                severity,
-                latitude: latitude || 19.0760,
-                longitude: longitude || 72.8777,
-                image_url: imageUrl,
-                user_id: user.id,
-                ward: profile?.ward || 'Ward 14 (Bandra West)',
-                status: 'reported',
-            }).select().single();
+            // 2. Insert into 'issues' table
+            const { data: newIssue, error: dbError } = await supabase
+                .from('issues')
+                .insert({
+                    title,
+                    description,
+                    category,
+                    severity,
+                    latitude: latitude || 19.0760,
+                    longitude: longitude || 72.8777,
+                    image_url: imageUrl,
+                    user_id: user.id,
+                    ward: profile?.ward || 'Ward 14 (Bandra West)',
+                    status: 'reported',
+                })
+                .select()
+                .single();
 
-            if (dbError) throw dbError;
+            if (dbError) {
+                throw new Error(dbError.message || dbError.details || 'Database insert failed.');
+            }
 
+            // 3. Optional timeline audit log
             if (newIssue) {
                 await supabase.from('issue_timeline').insert({
                     issue_id: newIssue.id,
@@ -147,8 +156,12 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
             setDescription('');
             onSuccess?.();
             onClose();
-        } catch (err: unknown) {
-            setFormError(err instanceof Error ? err.message : 'Submission failed. Please retry.');
+        } catch (err: any) {
+            const displayMsg =
+                err?.message ||
+                err?.error_description ||
+                (typeof err === 'object' ? JSON.stringify(err) : String(err));
+            setFormError(displayMsg);
         } finally {
             setLoading(false);
         }
@@ -171,7 +184,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                 {formError && (
                     <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                        <span>{formError}</span>
+                        <span className="break-words">{formError}</span>
                     </div>
                 )}
 
@@ -189,7 +202,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     <Camera className="w-6 h-6" />
                                 </div>
                                 <div className="text-xs font-semibold text-slate-700">Tap to Capture or Upload Evidence</div>
-                                <div className="text-[11px] text-slate-400">JPEG, PNG up to 5MB</div>
+                                <div className="text-[11px] text-slate-400">JPEG, PNG, WebP up to 5MB</div>
                             </div>
                         ) : (
                             <div className="relative rounded-2xl overflow-hidden border border-slate-200 group h-44">
