@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
-import { AuthModal } from './components/AuthModal';
 import { ReportModal } from './components/ReportModal';
 import { BottomNav } from './components/BottomNav';
 import { WorkerView } from './components/WorkerView';
 import { SupervisorView } from './components/SupervisorView';
-import { useAuth, WARDS } from './context/AuthContext';
+import { useAuth, WARDS, determineRoleFromEmail } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 import {
   Camera,
@@ -22,18 +21,33 @@ import {
   Loader2,
   Lock,
   Edit3,
-  Check
+  Check,
+  AlertCircle,
+  KeyRound,
+  User,
+  Building2
 } from 'lucide-react';
 
 export default function App() {
-  const { user, profile, loading, updateProfile } = useAuth();
-  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const {
+    user,
+    profile,
+    loading,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    sendEmailOtp,
+    verifyEmailOtp,
+    updateProfile
+  } = useAuth();
+
+  // App Dashboard States
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
   const [issues, setIssues] = useState<any[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
 
-  // Profile Edit State
+  // Profile Edit States
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -46,6 +60,22 @@ export default function App() {
   const [disputeReason, setDisputeReason] = useState('');
   const [isDisputing, setIsDisputing] = useState(false);
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
+
+  // Auth Screen States
+  const [authMode, setAuthMode] = useState<'password' | 'otp'>('password');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authOtpCode, setAuthOtpCode] = useState('');
+  const [authFullName, setAuthFullName] = useState('');
+  const [authWard, setAuthWard] = useState<string>(WARDS[0]);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const detectedRole = determineRoleFromEmail(authEmail);
+  const isSupervisorAuth = detectedRole === 'supervisor';
 
   const fetchIssues = async () => {
     const { data } = await supabase
@@ -62,8 +92,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchIssues();
-  }, []);
+    if (user) {
+      fetchIssues();
+    }
+  }, [user]);
 
   useEffect(() => {
     if (profile?.role === 'field_worker') setActiveTab('tasks');
@@ -77,11 +109,82 @@ export default function App() {
     }
   }, [profile?.role, profile?.full_name, profile?.ward]);
 
-  const handleOpenReport = () => {
-    if (!user) {
-      setAuthModalOpen(true);
-    } else {
-      setReportModalOpen(true);
+  // Auth Handlers
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      if (isSignUp) {
+        if (!authFullName.trim()) throw new Error('Please enter your full name');
+        const { error } = await signUp(
+          authEmail,
+          authPassword,
+          authFullName,
+          isSupervisorAuth ? undefined : authWard
+        );
+        if (error) throw error;
+      } else {
+        const { error } = await signIn(authEmail, authPassword);
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || 'Authentication failed. Please verify credentials.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthSuccess(null);
+    setAuthLoading(true);
+
+    try {
+      if (!authEmail.trim()) throw new Error('Please enter your email address');
+      const { error } = await sendEmailOtp(
+        authEmail,
+        authFullName.trim() || undefined,
+        isSupervisorAuth ? undefined : authWard
+      );
+      if (error) throw error;
+
+      setOtpSent(true);
+      setAuthSuccess(`A 6-digit code has been sent to ${authEmail}`);
+    } catch (err: any) {
+      setAuthError(err?.message || 'Failed to send OTP code.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      if (!authOtpCode.trim()) throw new Error('Please enter the 6-digit code');
+      const { error } = await verifyEmailOtp(authEmail, authOtpCode.trim());
+      if (error) throw error;
+    } catch (err: any) {
+      setAuthError(err?.message || 'Invalid or expired code.');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) throw error;
+    } catch (err: any) {
+      setAuthError(err?.message || 'Google Sign-In failed.');
+      setAuthLoading(false);
     }
   };
 
@@ -162,10 +265,279 @@ export default function App() {
     );
   }
 
+  // ==========================================
+  // ONLY SIGN IN / REGISTER LANDING PAGE
+  // ==========================================
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center px-4 py-8 font-sans">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl border border-slate-200/80 p-6 sm:p-7 space-y-4">
+
+          <div className="text-center space-y-1">
+            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white mx-auto shadow-md shadow-blue-600/30 font-black">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <h1 className="text-xl font-black tracking-tight text-slate-900 mt-2">
+              City<span className="text-blue-600">Fix</span>
+            </h1>
+            <p className="text-xs text-slate-500">Municipal Civic Infrastructure Network</p>
+          </div>
+
+          {authError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="break-words line-clamp-2">{authError}</span>
+            </div>
+          )}
+
+          {authSuccess && (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded-xl flex items-center gap-2">
+              <Mail className="w-4 h-4 shrink-0" />
+              <span className="break-words line-clamp-2">{authSuccess}</span>
+            </div>
+          )}
+
+          {/* Google Sign In */}
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={authLoading}
+            className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-xs"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>Continue with Google</span>
+          </button>
+
+          <div className="relative flex items-center justify-center">
+            <div className="border-t border-slate-200 w-full" />
+            <span className="bg-white px-2 text-[10px] text-slate-400 font-bold uppercase tracking-wider">or</span>
+            <div className="border-t border-slate-200 w-full" />
+          </div>
+
+          {/* Password Mode */}
+          {authMode === 'password' && (
+            <form onSubmit={handlePasswordSubmit} className="space-y-3">
+              {isSignUp && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Full Name *
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      required
+                      value={authFullName}
+                      onChange={(e) => setAuthFullName(e.target.value)}
+                      placeholder="e.g., Jane Doe"
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Email Address *
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="name@ves.ac.in or resident@gmail.com"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  />
+                </div>
+              </div>
+
+              {isSignUp && !isSupervisorAuth && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{detectedRole === 'field_worker' ? 'Assigned Field Ward *' : 'Residential Ward *'}</span>
+                  </label>
+                  <select
+                    value={authWard}
+                    onChange={(e) => setAuthWard(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none"
+                  >
+                    {WARDS.map((w) => (
+                      <option key={w} value={w}>{w}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Password *
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="password"
+                    required
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-sm shadow-blue-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+              </button>
+            </form>
+          )}
+
+          {/* Email OTP Mode */}
+          {authMode === 'otp' && (
+            <>
+              {!otpSent ? (
+                <form onSubmit={handleSendOtp} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="Enter email to receive login code"
+                      className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white outline-none"
+                    />
+                  </div>
+
+                  {!isSupervisorAuth && (
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                        Ward Jurisdiction
+                      </label>
+                      <select
+                        value={authWard}
+                        onChange={(e) => setAuthWard(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none"
+                      >
+                        {WARDS.map((w) => (
+                          <option key={w} value={w}>{w}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Send Login Code</span>
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      6-Digit Email Code *
+                    </label>
+                    <div className="relative">
+                      <KeyRound className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        value={authOtpCode}
+                        onChange={(e) => setAuthOtpCode(e.target.value)}
+                        placeholder="123456"
+                        className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white tracking-widest font-mono text-center text-sm font-bold outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {authLoading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    <span>Verify & Sign In</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setOtpSent(false)}
+                    className="w-full text-[11px] text-slate-500 font-bold hover:underline text-center"
+                  >
+                    Change Email / Resend Code
+                  </button>
+                </form>
+              )}
+            </>
+          )}
+
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode(authMode === 'password' ? 'otp' : 'password');
+                setAuthError(null);
+                setAuthSuccess(null);
+              }}
+              className="font-bold text-slate-600 hover:text-slate-900"
+            >
+              {authMode === 'password' ? 'Sign in with Email Code' : 'Sign in with Password'}
+            </button>
+
+            {authMode === 'password' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSignUp(!isSignUp);
+                  setAuthError(null);
+                }}
+                className="font-bold text-blue-600 hover:underline"
+              >
+                {isSignUp ? 'Sign In' : 'Sign Up'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // AUTHENTICATED DASHBOARD
+  // ==========================================
   const role = profile?.role || 'citizen';
   const isTicketAuthor = user && selectedIssue && user.id === selectedIssue.user_id;
 
-  // ALL CAPS Status Badge
   const getStatusBadge = (status: string, disputeStatus?: string) => {
     if (disputeStatus === 'disputed') {
       return (
@@ -191,15 +563,15 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100/60 text-slate-900 flex flex-col font-sans pb-24 md:pb-8">
       <Navbar
-        onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenAuth={() => { }}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onOpenReport={handleOpenReport}
+        onOpenReport={() => setReportModalOpen(true)}
       />
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 pt-6 space-y-6">
 
-        {/* FIELD WORKER */}
+        {/* FIELD WORKER PORTAL */}
         {role === 'field_worker' && (
           <WorkerView
             issues={issues}
@@ -208,7 +580,7 @@ export default function App() {
           />
         )}
 
-        {/* SUPERVISOR */}
+        {/* SUPERVISOR DASHBOARD */}
         {role === 'supervisor' && (
           <SupervisorView
             issues={issues}
@@ -217,15 +589,13 @@ export default function App() {
           />
         )}
 
-        {/* CITIZEN */}
+        {/* CITIZEN PORTAL */}
         {role === 'citizen' && (
           <>
             {activeTab === 'home' && (
               <div className="space-y-5">
-
-                {/* Hero Action Card */}
                 <div
-                  onClick={handleOpenReport}
+                  onClick={() => setReportModalOpen(true)}
                   className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-5 rounded-3xl shadow-lg shadow-blue-600/20 cursor-pointer active:scale-[0.99] transition relative overflow-hidden flex items-center justify-between"
                 >
                   <div className="space-y-1 min-w-0 flex-1 pr-3">
@@ -242,7 +612,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Community Feed */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between px-1">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Community Tickets</h4>
@@ -252,7 +621,7 @@ export default function App() {
                   {issues.length === 0 ? (
                     <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
                       <p className="text-sm font-semibold text-slate-500">No grievances filed yet.</p>
-                      <button onClick={handleOpenReport} className="mt-2 text-xs font-bold text-blue-600 hover:underline">Be the first to report</button>
+                      <button onClick={() => setReportModalOpen(true)} className="mt-2 text-xs font-bold text-blue-600 hover:underline">Be the first to report</button>
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -297,7 +666,7 @@ export default function App() {
                 {issues.filter(i => i.user_id === user?.id).length === 0 ? (
                   <div className="bg-white rounded-2xl p-12 text-center border border-slate-200 space-y-2">
                     <p className="text-sm font-semibold text-slate-500">You haven't submitted any complaints yet.</p>
-                    <button onClick={handleOpenReport} className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl">File First Ticket</button>
+                    <button onClick={() => setReportModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl">File First Ticket</button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -327,7 +696,6 @@ export default function App() {
         {/* PROFILE WITH EDIT MODE */}
         {activeTab === 'profile' && (
           <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs max-w-lg mx-auto space-y-6">
-
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
                 <div className="w-14 h-14 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center font-black text-xl border border-blue-200">
@@ -349,7 +717,6 @@ export default function App() {
               )}
             </div>
 
-            {/* View Mode */}
             {!isEditingProfile ? (
               <div className="space-y-3">
                 <div className="flex justify-between py-2 border-b border-slate-100 text-xs">
@@ -372,7 +739,6 @@ export default function App() {
                 )}
               </div>
             ) : (
-              /* Edit Profile Form */
               <form onSubmit={handleSaveProfile} className="space-y-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Full Name</label>
@@ -437,7 +803,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Ticket Detail Modal */}
+      {/* Ticket Detail Drawer */}
       {selectedIssue && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
           <div className="relative w-full max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto p-6 space-y-5">
@@ -590,12 +956,11 @@ export default function App() {
         <BottomNav
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          onOpenReport={handleOpenReport}
+          onOpenReport={() => setReportModalOpen(true)}
           role={role}
         />
       </div>
 
-      <AuthModal isOpen={authModalOpen} onClose={() => setAuthModalOpen(false)} />
       <ReportModal isOpen={reportModalOpen} onClose={() => setReportModalOpen(false)} onSuccess={fetchIssues} />
     </div>
   );

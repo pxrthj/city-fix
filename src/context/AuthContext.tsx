@@ -68,6 +68,33 @@ export function determineRoleFromEmail(email: string): UserRole {
     return 'citizen';
 }
 
+function buildFallbackProfile(authUser: User): UserProfile {
+    const role = determineRoleFromEmail(authUser.email || '');
+    const ward =
+        (authUser.user_metadata?.ward as string) ||
+        (role === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
+    const fullName =
+        (authUser.user_metadata?.full_name as string) ||
+        (authUser.user_metadata?.name as string) ||
+        authUser.email?.split('@')[0] ||
+        'Citizen';
+
+    return {
+        id: authUser.id,
+        full_name: fullName,
+        phone: null,
+        ward,
+        role,
+        department:
+            role === 'supervisor'
+                ? 'Municipal Engineering'
+                : role === 'field_worker'
+                    ? 'Field Operations'
+                    : null,
+        badge_id: role === 'field_worker' ? `FW-${authUser.id.slice(0, 4).toUpperCase()}` : null,
+    };
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -75,37 +102,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
 
     const syncProfile = async (authUser: User) => {
-        const calculatedRole = determineRoleFromEmail(authUser.email || '');
-
-        const userWard =
-            (authUser.user_metadata?.ward as string) ||
-            (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
-        const fullName =
-            (authUser.user_metadata?.full_name as string) ||
-            (authUser.user_metadata?.name as string) ||
-            authUser.email?.split('@')[0] ||
-            'Citizen User';
-
-        const fallbackProfile: UserProfile = {
-            id: authUser.id,
-            full_name: fullName,
-            phone: null,
-            ward: userWard,
-            role: calculatedRole,
-            department:
-                calculatedRole === 'supervisor'
-                    ? 'Municipal Engineering'
-                    : calculatedRole === 'field_worker'
-                        ? 'Field Operations'
-                        : null,
-            badge_id:
-                calculatedRole === 'field_worker'
-                    ? `FW-${authUser.id.slice(0, 4).toUpperCase()}`
-                    : null,
-        };
+        const fallback = buildFallbackProfile(authUser);
 
         try {
-            // Use maybeSingle() to avoid PGRST116 error when user does not exist in DB yet
             const { data, error } = await supabase
                 .from('profiles')
                 .select('*')
@@ -113,67 +112,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .maybeSingle();
 
             if (error || !data) {
-                await supabase.from('profiles').upsert(fallbackProfile);
-                setProfile(fallbackProfile);
+                await supabase.from('profiles').upsert(fallback);
+                setProfile(fallback);
             } else {
-                if (data.role !== calculatedRole) {
-                    await supabase.from('profiles').update({ role: calculatedRole }).eq('id', authUser.id);
-                    setProfile({ ...(data as UserProfile), role: calculatedRole });
+                if (data.role !== fallback.role) {
+                    await supabase.from('profiles').update({ role: fallback.role }).eq('id', authUser.id);
+                    setProfile({ ...(data as UserProfile), role: fallback.role });
                 } else {
                     setProfile(data as UserProfile);
                 }
             }
         } catch {
-            // Always fallback to memory state so UI doesn't kick user out
-            setProfile(fallbackProfile);
+            setProfile(fallback);
         }
     };
 
     useEffect(() => {
-        let isMounted = true;
+        let mounted = true;
 
-        const initializeAuth = async () => {
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!isMounted) return;
-
-                if (session?.user) {
-                    setSession(session);
-                    setUser(session.user);
-                    await syncProfile(session.user);
-                } else {
-                    setSession(null);
-                    setUser(null);
-                    setProfile(null);
-                }
-            } catch (err) {
-                console.error('Session init error:', err);
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
-
-        initializeAuth();
-
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            if (!isMounted) return;
-
-            if (session?.user) {
-                setSession(session);
-                setUser(session.user);
-                await syncProfile(session.user);
+        const handleAuth = async (sess: Session | null) => {
+            if (!mounted) return;
+            if (sess?.user) {
+                setSession(sess);
+                setUser(sess.user);
+                const optimisticProfile = buildFallbackProfile(sess.user);
+                setProfile(optimisticProfile);
+                await syncProfile(sess.user);
             } else {
                 setSession(null);
                 setUser(null);
                 setProfile(null);
             }
-            setLoading(false);
+            if (mounted) setLoading(false);
+        };
+
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            handleAuth(session);
+        });
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((_event, session) => {
+            handleAuth(session);
         });
 
         return () => {
-            isMounted = false;
+            mounted = false;
             subscription.unsubscribe();
         };
     }, []);
@@ -219,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin + window.location.pathname,
+                redirectTo: window.location.origin,
             },
         });
         return { error };
@@ -267,7 +251,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signOut = async () => {
         await supabase.auth.signOut();
+        setUser(null);
         setProfile(null);
+        setSession(null);
     };
 
     return (
