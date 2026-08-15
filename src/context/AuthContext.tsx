@@ -1,57 +1,129 @@
-import { createContext, useContext, useEffect, useState, type FC, type ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-interface AuthContextType {
-    user: User | null;
-    session: Session | null;
-    loading: boolean;
-    signOut: () => Promise<void>;
+export type UserRole = 'citizen' | 'field_worker' | 'supervisor';
+
+export interface UserProfile {
+    id: string;
+    full_name: string;
+    phone: string | null;
+    ward: string;
+    role: UserRole;
+    department?: string | null;
+    badge_id?: string | null;
+    supervisor_id?: string | null;
 }
 
-const AuthContext = createContext<AuthContextType>({
-    user: null,
-    session: null,
-    loading: true,
-    signOut: async () => { },
-});
+interface AuthContextType {
+    user: User | null;
+    profile: UserProfile | null;
+    session: Session | null;
+    loading: boolean;
+    signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+    signUp: (email: string, password: string, fullName: string, role?: UserRole) => Promise<{ error: Error | null }>;
+    signOut: () => Promise<void>;
+    switchDemoRole: (role: UserRole) => void;
+}
 
-export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
+    const [profile, setProfile] = useState<UserProfile | null>(null);
     const [session, setSession] = useState<Session | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
+    const [loading, setLoading] = useState(true);
+
+    const fetchProfile = async (userId: string, userMeta?: Record<string, unknown>) => {
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single();
+
+            if (error || !data) {
+                const fallbackProfile: UserProfile = {
+                    id: userId,
+                    full_name: (userMeta?.full_name as string) || 'Citizen User',
+                    phone: null,
+                    ward: 'Ward 14 (Bandra West)',
+                    role: ((userMeta?.role as string) as UserRole) || 'citizen',
+                };
+                await supabase.from('profiles').upsert(fallbackProfile);
+                setProfile(fallbackProfile);
+            } else {
+                setProfile(data as UserProfile);
+            }
+        } catch {
+            setProfile(null);
+        }
+    };
 
     useEffect(() => {
-        // 1. Initial Session Hydration: Check if a valid JWT exists in browser localStorage
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session);
             setUser(session?.user ?? null);
+            if (session?.user) {
+                fetchProfile(session.user.id, session.user.user_metadata);
+            }
             setLoading(false);
         });
 
-        // 2. Realtime Event Listener: Reacts to SIGNED_IN, SIGNED_OUT, and TOKEN_REFRESHED events
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
+            if (session?.user) {
+                fetchProfile(session.user.id, session.user.user_metadata);
+            } else {
+                setProfile(null);
+            }
             setLoading(false);
         });
 
-        // 3. Cleanup: Unsubscribe from the event listener when the component unmounts
-        return () => {
-            subscription.unsubscribe();
-        };
+        return () => subscription.unsubscribe();
     }, []);
 
+    const signIn = async (email: string, password: string) => {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        return { error };
+    };
+
+    const signUp = async (email: string, password: string, fullName: string, role: UserRole = 'citizen') => {
+        const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: fullName, role } },
+        });
+
+        if (!error && data.user) {
+            const newProfile: UserProfile = {
+                id: data.user.id,
+                full_name: fullName,
+                phone: null,
+                ward: 'Ward 14 (Bandra West)',
+                role,
+            };
+            await supabase.from('profiles').insert(newProfile);
+            setProfile(newProfile);
+        }
+
+        return { error };
+    };
+
     const signOut = async () => {
-        try {
-            await supabase.auth.signOut();
-        } catch (error) {
-            console.error('Error signing out:', error);
+        await supabase.auth.signOut();
+        setProfile(null);
+    };
+
+    const switchDemoRole = (role: UserRole) => {
+        if (profile) {
+            setProfile({ ...profile, role });
         }
     };
 
     return (
-        <AuthContext.Provider value={{ user, session, loading, signOut }}>
+        <AuthContext.Provider value={{ user, profile, session, loading, signIn, signUp, signOut, switchDemoRole }}>
             {children}
         </AuthContext.Provider>
     );
@@ -59,8 +131,6 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuth must be used within an AuthProvider');
-    }
+    if (!context) throw new Error('useAuth must be used within an AuthProvider');
     return context;
 };
