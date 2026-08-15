@@ -172,7 +172,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                 key={f}
                                 onClick={() => setFilter(f)}
                                 className={`px-3 py-1.5 rounded-xl text-xs font-bold capitalize transition border ${filter === f
-                                        ? 'bg-slate-900 text-white border-slate-900'
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs shadow-blue-600/30'
                                         : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                                     }`}
                             >

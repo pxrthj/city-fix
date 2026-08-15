@@ -68,16 +68,16 @@ export const WorkerView: React.FC<WorkerViewProps> = ({ issues, activeTab, onRef
         <div className="space-y-4">
             {activeTab === 'tasks' && (
                 <>
-                    <div className="bg-slate-900 text-white p-4 rounded-3xl shadow-lg border border-slate-800 flex items-center justify-between">
+                    <div className="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white p-5 rounded-3xl shadow-lg shadow-blue-600/20 border border-blue-500/30 flex items-center justify-between">
                         <div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                                <Wrench className="w-3 h-3" /> Dispatched Work Orders
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-100">
+                                <Wrench className="w-3.5 h-3.5 text-amber-300" /> Dispatched Work Orders
                             </div>
-                            <h2 className="text-xl font-black mt-0.5">{workerIssues.length} Assigned Tasks</h2>
-                            <p className="text-xs text-slate-400">{profile?.ward || 'Ward Duty Area'}</p>
+                            <h2 className="text-xl font-black mt-1 text-white">{workerIssues.length} Assigned Tasks</h2>
+                            <p className="text-xs text-blue-100 mt-0.5">{profile?.ward || 'Ward Duty Area'}</p>
                         </div>
                         <div className="text-right">
-                            <span className="text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1 rounded-full">
+                            <span className="text-xs font-bold bg-white/20 text-white border border-white/30 backdrop-blur-xs px-3 py-1 rounded-full shadow-xs">
                                 On Duty
                             </span>
                         </div>

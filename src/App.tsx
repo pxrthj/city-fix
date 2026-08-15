@@ -259,8 +259,9 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-800 gap-3">
+        <div className="w-9 h-9 border-3 border-blue-600 border-t-transparent rounded-full animate-spin shadow-xs" />
+        <span className="text-xs font-bold text-slate-500 tracking-wide">Loading Municipal Portal...</span>
       </div>
     );
   }
