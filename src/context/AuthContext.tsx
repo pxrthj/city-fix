@@ -4,6 +4,15 @@ import { supabase } from '../lib/supabase';
 
 export type UserRole = 'citizen' | 'field_worker' | 'supervisor';
 
+export const WARDS = [
+    'Ward 14 (Bandra West)',
+    'Ward 12 (Kurla / Chembur)',
+    'Ward 9 (Dadar / Prabhadevi)',
+    'Ward 7 (Andheri East)',
+    'Ward 4 (Borivali West)',
+    'Ward 1 (Colaba / Fort)',
+] as const;
+
 export interface UserProfile {
     id: string;
     full_name: string;
@@ -21,15 +30,12 @@ interface AuthContextType {
     session: Session | null;
     loading: boolean;
     signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-    signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+    signUp: (email: string, password: string, fullName: string, ward?: string) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * Derives the system role strictly from the user's email domain/pattern
- */
 export function determineRoleFromEmail(email: string): UserRole {
     const normalized = email.toLowerCase().trim();
     if (
@@ -68,11 +74,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 .single();
 
             if (error || !data) {
+                const userWard = (authUser.user_metadata?.ward as string) || (calculatedRole === 'supervisor' ? 'Municipal HQ (All Wards)' : WARDS[0]);
                 const newProfile: UserProfile = {
                     id: authUser.id,
                     full_name: (authUser.user_metadata?.full_name as string) || 'User',
                     phone: null,
-                    ward: 'Ward 14 (Bandra West)',
+                    ward: userWard,
                     role: calculatedRole,
                     department: calculatedRole === 'supervisor' ? 'Municipal Engineering' : calculatedRole === 'field_worker' ? 'Field Operations' : null,
                     badge_id: calculatedRole === 'field_worker' ? `FW-${authUser.id.slice(0, 4).toUpperCase()}` : null,
@@ -80,7 +87,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 await supabase.from('profiles').upsert(newProfile);
                 setProfile(newProfile);
             } else {
-                // Enforce email-derived role
                 if (data.role !== calculatedRole) {
                     await supabase.from('profiles').update({ role: calculatedRole }).eq('id', authUser.id);
                     setProfile({ ...(data as UserProfile), role: calculatedRole });
@@ -122,13 +128,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error };
     };
 
-    const signUp = async (email: string, password: string, fullName: string) => {
+    const signUp = async (email: string, password: string, fullName: string, ward?: string) => {
         const role = determineRoleFromEmail(email);
+        const assignedWard = role === 'supervisor' ? 'Municipal HQ (All Wards)' : (ward || WARDS[0]);
 
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { full_name: fullName, role } },
+            options: { data: { full_name: fullName, role, ward: assignedWard } },
         });
 
         if (!error && data.user) {
@@ -136,7 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 id: data.user.id,
                 full_name: fullName,
                 phone: null,
-                ward: 'Ward 14 (Bandra West)',
+                ward: assignedWard,
                 role,
                 department: role === 'supervisor' ? 'Municipal Engineering' : role === 'field_worker' ? 'Field Operations' : null,
                 badge_id: role === 'field_worker' ? `FW-${data.user.id.slice(0, 4).toUpperCase()}` : null,

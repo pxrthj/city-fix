@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, WARDS } from '../context/AuthContext';
 import { uploadIssuePhoto } from '../lib/storage';
 import { supabase } from '../lib/supabase';
 import {
@@ -44,6 +44,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState(CATEGORIES[0].id);
     const [severity, setSeverity] = useState('Medium');
+    const [selectedWard, setSelectedWard] = useState<string>(profile?.ward && profile.ward !== 'Municipal HQ (All Wards)' ? profile.ward : WARDS[0]);
     const [description, setDescription] = useState('');
 
     const [latitude, setLatitude] = useState<number | null>(null);
@@ -106,20 +107,18 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
         }
 
         if (!selectedFile) {
-            setFormError('Please attach a photo of the issue.');
+            setFormError('Please attach photo evidence of the issue.');
             return;
         }
 
         setLoading(true);
 
         try {
-            // 1. Upload photo to Supabase Storage
             const { url: imageUrl, error: uploadErr } = await uploadIssuePhoto(selectedFile, user.id);
             if (uploadErr || !imageUrl) {
                 throw new Error(uploadErr?.message || 'Failed to upload photo to storage.');
             }
 
-            // 2. Insert into 'issues' table
             const { data: newIssue, error: dbError } = await supabase
                 .from('issues')
                 .insert({
@@ -131,22 +130,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                     longitude: longitude || 72.8777,
                     image_url: imageUrl,
                     user_id: user.id,
-                    ward: profile?.ward || 'Ward 14 (Bandra West)',
+                    ward: selectedWard,
                     status: 'reported',
                 })
                 .select()
                 .single();
 
-            if (dbError) {
-                throw new Error(dbError.message || dbError.details || 'Database insert failed.');
-            }
+            if (dbError) throw dbError;
 
-            // 3. Optional timeline audit log
             if (newIssue) {
                 await supabase.from('issue_timeline').insert({
                     issue_id: newIssue.id,
                     status: 'reported',
-                    message: 'Grievance ticket registered and queued for municipal dispatch.',
+                    message: `Grievance registered in ${selectedWard} and queued for supervisor dispatch.`,
                     actor_name: profile?.full_name || 'Citizen',
                 });
             }
@@ -157,11 +153,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
             onSuccess?.();
             onClose();
         } catch (err: any) {
-            const displayMsg =
-                err?.message ||
-                err?.error_description ||
-                (typeof err === 'object' ? JSON.stringify(err) : String(err));
-            setFormError(displayMsg);
+            setFormError(err?.message || 'Submission failed. Please retry.');
         } finally {
             setLoading(false);
         }
@@ -174,7 +166,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
                     <div>
                         <h2 className="text-lg font-bold text-slate-900">File a Grievance</h2>
-                        <p className="text-xs text-slate-500">{profile?.ward || 'Ward 14 (Bandra West)'}</p>
+                        <p className="text-xs text-slate-500">Route issue directly to municipal ward crews</p>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100">
                         <X className="w-5 h-5" />
@@ -183,12 +175,13 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
 
                 {formError && (
                     <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <AlertCircle className="w-4 h-4 shrink-0" />
                         <span className="break-words">{formError}</span>
                     </div>
                 )}
 
                 <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
+                    {/* Photo Evidence */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Photo Evidence *
@@ -226,6 +219,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         />
                     </div>
 
+                    {/* Title */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Issue Title *
@@ -240,6 +234,24 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         />
                     </div>
 
+                    {/* Incident Ward Selection */}
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Incident Location (Ward) *</span>
+                        </label>
+                        <select
+                            value={selectedWard}
+                            onChange={(e) => setSelectedWard(e.target.value)}
+                            className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        >
+                            {WARDS.map((w) => (
+                                <option key={w} value={w}>{w}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Category */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Category *
@@ -251,8 +263,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     type="button"
                                     onClick={() => setCategory(cat.id)}
                                     className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition border ${category === cat.id
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/30'
-                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/30'
+                                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                                         }`}
                                 >
                                     {cat.label}
@@ -261,6 +273,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         </div>
                     </div>
 
+                    {/* Urgency */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Assessed Urgency
@@ -272,8 +285,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                                     type="button"
                                     onClick={() => setSeverity(s.id)}
                                     className={`py-2 px-1 text-xs font-bold rounded-xl border text-center transition ${severity === s.id
-                                        ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50 text-blue-900 font-extrabold'
-                                        : s.color
+                                            ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50 text-blue-900 font-extrabold'
+                                            : s.color
                                         }`}
                                 >
                                     {s.label}
@@ -282,9 +295,10 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         </div>
                     </div>
 
+                    {/* GPS Detection */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                            GPS Location
+                            GPS Coordinates
                         </label>
                         <div className="flex items-center gap-2">
                             <button
@@ -307,6 +321,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                         {locationError && <p className="text-[11px] text-rose-500 mt-1">{locationError}</p>}
                     </div>
 
+                    {/* Description */}
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                             Description *
@@ -316,7 +331,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose, onSuc
                             rows={3}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder="Describe hazards, landmarks, or details..."
+                            placeholder="Describe landmarks, hazards, or repair requirements..."
                             className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition resize-none"
                         />
                     </div>

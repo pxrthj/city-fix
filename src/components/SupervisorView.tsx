@@ -10,14 +10,9 @@ import {
     AlertTriangle,
     RotateCcw,
     Star,
-    CheckCircle2
+    Users,
+    AlertCircle
 } from 'lucide-react';
-
-const FALLBACK_WORKERS = [
-    { id: '00000000-0000-0000-0000-000000000001', full_name: 'Suresh Shinde', department: 'Roads & Infrastructure', badge_id: 'FW-1042', phone: '+91 98201 12345' },
-    { id: '00000000-0000-0000-0000-000000000002', full_name: 'Mahesh Patel', department: 'Sanitation & Solid Waste', badge_id: 'FW-1088', phone: '+91 98202 23456' },
-    { id: '00000000-0000-0000-0000-000000000003', full_name: 'Vikram Jadhav', department: 'Electrical & Streetlights', badge_id: 'FW-1105', phone: '+91 98203 34567' },
-];
 
 export interface SupervisorViewProps {
     issues: any[];
@@ -27,24 +22,26 @@ export interface SupervisorViewProps {
 
 export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTab, onRefresh }) => {
     const [filter, setFilter] = useState<'all' | 'unassigned' | 'disputed' | 'in_progress' | 'resolved'>('all');
-    const [workers, setWorkers] = useState<any[]>(FALLBACK_WORKERS);
+    const [workers, setWorkers] = useState<any[]>([]);
     const [assigningIssue, setAssigningIssue] = useState<any | null>(null);
     const [reopeningIssue, setReopeningIssue] = useState<any | null>(null);
     const [reopenNotes, setReopenNotes] = useState('');
-    const [selectedWorkerId, setSelectedWorkerId] = useState<string>(FALLBACK_WORKERS[0].id);
+    const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
     const [loadingAction, setLoadingAction] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+    const fetchWorkers = async () => {
+        const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('role', 'field_worker');
+        if (data) {
+            setWorkers(data);
+            if (data.length > 0) setSelectedWorkerId(data[0].id);
+        }
+    };
 
     useEffect(() => {
-        const fetchWorkers = async () => {
-            const { data } = await supabase
-                .from('profiles')
-                .select('*')
-                .eq('role', 'field_worker');
-            if (data && data.length > 0) {
-                setWorkers(data);
-                setSelectedWorkerId(data[0].id);
-            }
-        };
         fetchWorkers();
     }, []);
 
@@ -61,16 +58,26 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
         return true;
     });
 
+    // Filter workers available for the selected issue's ward
+    const matchingWardWorkers = assigningIssue
+        ? workers.filter(w => w.ward === assigningIssue.ward)
+        : workers;
+
     const handleAssignWorker = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!assigningIssue) return;
 
+        const workerId = selectedWorkerId || matchingWardWorkers[0]?.id || workers[0]?.id;
+        if (!workerId) {
+            setErrorMessage('No registered technician available to dispatch.');
+            return;
+        }
+
         setLoadingAction(true);
-        const workerId = selectedWorkerId || workers[0].id;
-        const worker = workers.find(w => w.id === workerId) || workers[0];
+        const worker = workers.find(w => w.id === workerId);
 
         try {
-            await supabase
+            const { error: updateErr } = await supabase
                 .from('issues')
                 .update({
                     assigned_worker_id: workerId,
@@ -79,15 +86,19 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                 })
                 .eq('id', assigningIssue.id);
 
+            if (updateErr) throw new Error(updateErr.message);
+
             await supabase.from('issue_timeline').insert({
                 issue_id: assigningIssue.id,
                 status: 'assigned',
-                message: `Dispatched to technician ${worker.full_name} (${worker.badge_id || 'FW'})`,
+                message: `Dispatched to technician ${worker?.full_name || 'Worker'} (${worker?.ward || 'Assigned Ward'})`,
                 actor_name: 'Ward Supervisor',
             });
 
             setAssigningIssue(null);
             onRefresh();
+        } catch (err: any) {
+            setErrorMessage(err?.message || 'Failed to dispatch technician.');
         } finally {
             setLoadingAction(false);
         }
@@ -112,7 +123,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
             await supabase.from('issue_timeline').insert({
                 issue_id: reopeningIssue.id,
                 status: 'reopened',
-                message: `Supervisor rejected resolution and reopened work order: "${reopenNotes.trim()}"`,
+                message: `Supervisor rejected proof & reopened order: "${reopenNotes.trim()}"`,
                 actor_name: 'Er. Rajesh Kadam (Supervisor)',
             });
 
@@ -128,7 +139,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
         <div className="space-y-4">
             {activeTab === 'triage' && (
                 <>
-                    {/* Metrics */}
                     <div className="grid grid-cols-4 gap-2">
                         <div className="bg-white p-2.5 rounded-2xl border border-slate-200 text-center shadow-xs">
                             <div className="text-base sm:text-lg font-black text-rose-600">{unassignedCount}</div>
@@ -148,7 +158,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         </div>
                     </div>
 
-                    {/* Filters */}
                     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                         {(['all', 'disputed', 'unassigned', 'in_progress', 'resolved'] as const).map((f) => (
                             <button
@@ -164,7 +173,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         ))}
                     </div>
 
-                    {/* Tickets */}
                     <div className="space-y-3">
                         {filteredIssues.length === 0 ? (
                             <div className="bg-white rounded-2xl p-8 text-center border border-slate-200">
@@ -178,8 +186,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                 return (
                                     <div key={issue.id} className={`bg-white p-4 rounded-2xl border shadow-xs space-y-3 ${isDisputed ? 'border-rose-300 ring-1 ring-rose-200 bg-rose-50/20' : 'border-slate-200'
                                         }`}>
-
-                                        {/* Header */}
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-1.5">
                                                 <span className="text-[10px] font-bold uppercase bg-blue-50 text-blue-600 px-2 py-0.5 rounded-md">
@@ -200,7 +206,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                             </span>
                                         </div>
 
-                                        {/* Content */}
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Before (Citizen)</div>
@@ -223,14 +228,12 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                             <p className="text-xs text-slate-600 mt-0.5">{issue.description}</p>
                                         </div>
 
-                                        {/* Citizen Dispute Feedback Callout */}
                                         {issue.dispute_reason && (
                                             <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl text-xs text-rose-900">
                                                 <strong>Citizen Dispute Reason:</strong> {issue.dispute_reason}
                                             </div>
                                         )}
 
-                                        {/* Citizen Star Rating */}
                                         {issue.rating && (
                                             <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-50 p-2 rounded-xl">
                                                 <span className="font-bold">Citizen Score:</span>
@@ -243,14 +246,13 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                             </div>
                                         )}
 
-                                        {/* Actions */}
                                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                                            <div className="text-xs text-slate-500 flex items-center gap-1">
-                                                <MapPin className="w-3 h-3" /> {issue.ward}
+                                            <div className="text-xs text-slate-700 font-semibold flex items-center gap-1">
+                                                <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                                                <span>{issue.ward}</span>
                                             </div>
 
                                             <div className="flex items-center gap-2">
-                                                {/* Supervisor Reopen Action */}
                                                 {isResolved && (
                                                     <button
                                                         onClick={() => setReopeningIssue(issue)}
@@ -263,7 +265,10 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
 
                                                 {!isResolved && (
                                                     <button
-                                                        onClick={() => setAssigningIssue(issue)}
+                                                        onClick={() => {
+                                                            setErrorMessage(null);
+                                                            setAssigningIssue(issue);
+                                                        }}
                                                         className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition active:scale-[0.98] shadow-xs shadow-blue-600/30"
                                                     >
                                                         <Send className="w-3 h-3" />
@@ -283,32 +288,40 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
             {activeTab === 'crew' && (
                 <div className="space-y-3">
                     <div className="flex items-center justify-between px-1">
-                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Field Crew Roster (Ward 14)</h3>
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Registered Field Crew</h3>
                         <span className="text-xs font-bold text-slate-600">{workers.length} Technicians</span>
                     </div>
 
-                    {workers.map((worker) => (
-                        <div key={worker.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 font-black flex items-center justify-center text-sm border border-blue-100">
-                                    {worker.badge_id?.replace('FW-', '') || 'FW'}
-                                </div>
-                                <div>
-                                    <div className="text-sm font-bold text-slate-900">{worker.full_name}</div>
-                                    <div className="text-xs text-slate-500">{worker.department || 'Infrastructure Repair'}</div>
-                                    <div className="text-[10px] text-emerald-600 font-bold mt-0.5">● Available for Dispatch</div>
-                                </div>
-                            </div>
-
-                            <a
-                                href={`tel:${worker.phone || '+919820112345'}`}
-                                className="p-2.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded-xl transition"
-                                title="Call Technician"
-                            >
-                                <Phone className="w-4 h-4" />
-                            </a>
+                    {workers.length === 0 ? (
+                        <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
+                            <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                            <p className="text-xs font-bold text-slate-600">No field technicians registered yet.</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">Sign up with a @ves.ac.in email to register technicians.</p>
                         </div>
-                    ))}
+                    ) : (
+                        workers.map((worker) => (
+                            <div key={worker.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 font-black flex items-center justify-center text-sm border border-blue-100">
+                                        {worker.badge_id?.replace('FW-', '') || 'FW'}
+                                    </div>
+                                    <div>
+                                        <div className="text-sm font-bold text-slate-900">{worker.full_name}</div>
+                                        <div className="text-xs text-slate-500">{worker.ward}</div>
+                                        <div className="text-[10px] text-emerald-600 font-bold mt-0.5">● Available for Ward Assignment</div>
+                                    </div>
+                                </div>
+
+                                <a
+                                    href={`tel:${worker.phone || '+919820112345'}`}
+                                    className="p-2.5 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-700 rounded-xl transition"
+                                    title="Call Technician"
+                                >
+                                    <Phone className="w-4 h-4" />
+                                </a>
+                            </div>
+                        ))
+                    )}
                 </div>
             )}
 
@@ -319,35 +332,61 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                             <div>
                                 <h3 className="text-base font-extrabold text-slate-900">Dispatch Field Technician</h3>
-                                <p className="text-xs text-slate-500">Ticket #{assigningIssue.id.slice(0, 8)}</p>
+                                <p className="text-xs text-slate-500">Incident Ward: <strong>{assigningIssue.ward}</strong></p>
                             </div>
                             <button onClick={() => setAssigningIssue(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
 
+                        {errorMessage && (
+                            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                <span>{errorMessage}</span>
+                            </div>
+                        )}
+
                         <form onSubmit={handleAssignWorker} className="space-y-4">
                             <div>
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                                    Select On-Duty Technician *
+                                    Select On-Duty Technician ({assigningIssue.ward}) *
                                 </label>
-                                <select
-                                    value={selectedWorkerId}
-                                    onChange={(e) => setSelectedWorkerId(e.target.value)}
-                                    className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                >
-                                    {workers.map((w) => (
-                                        <option key={w.id} value={w.id}>
-                                            {w.full_name} ({w.department})
-                                        </option>
-                                    ))}
-                                </select>
+                                {matchingWardWorkers.length > 0 ? (
+                                    <select
+                                        value={selectedWorkerId}
+                                        onChange={(e) => setSelectedWorkerId(e.target.value)}
+                                        className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                    >
+                                        {matchingWardWorkers.map((w) => (
+                                            <option key={w.id} value={w.id}>
+                                                {w.full_name} — {w.ward} ({w.badge_id || 'FW'})
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                                            ⚠️ No technician registered specifically for <strong>{assigningIssue.ward}</strong>. You can dispatch from all active technicians:
+                                        </p>
+                                        <select
+                                            value={selectedWorkerId}
+                                            onChange={(e) => setSelectedWorkerId(e.target.value)}
+                                            className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                        >
+                                            {workers.map((w) => (
+                                                <option key={w.id} value={w.id}>
+                                                    {w.full_name} — {w.ward}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
                             <button
                                 type="submit"
-                                disabled={loadingAction}
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-blue-600/30"
+                                disabled={loadingAction || workers.length === 0}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 disabled:opacity-50"
                             >
                                 {loadingAction && <Loader2 className="w-4 h-4 animate-spin" />}
                                 <span>{loadingAction ? 'Dispatching Crew...' : 'Confirm Dispatch'}</span>

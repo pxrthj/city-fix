@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { X, Mail, Lock, User, AlertCircle, Loader2, Info } from 'lucide-react';
+import { useAuth, WARDS, determineRoleFromEmail } from '../context/AuthContext';
+import { X, Mail, Lock, User, AlertCircle, Loader2, Info, MapPin } from 'lucide-react';
 
 interface AuthModalProps {
     isOpen: boolean;
@@ -13,10 +13,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
+    const [selectedWard, setSelectedWard] = useState<string>(WARDS[0]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
     if (!isOpen) return null;
+
+    const detectedRole = determineRoleFromEmail(email);
+    const isSupervisor = detectedRole === 'supervisor';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,7 +30,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         try {
             if (isSignUp) {
                 if (!fullName.trim()) throw new Error('Please enter your full name');
-                const { error: signUpError } = await signUp(email, password, fullName);
+                const { error: signUpError } = await signUp(email, password, fullName, isSupervisor ? undefined : selectedWard);
                 if (signUpError) throw signUpError;
             } else {
                 const { error: signInError } = await signIn(email, password);
@@ -42,7 +46,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs">
-            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-5 animate-slide-up">
+            <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-4 animate-slide-up">
 
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
@@ -56,13 +60,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     </button>
                 </div>
 
-                {/* Domain Guidance Note */}
                 <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-3 text-[11px] text-slate-700 space-y-1">
                     <div className="flex items-center gap-1 font-bold text-blue-900">
                         <Info className="w-3.5 h-3.5 text-blue-600" /> Automatic Role Routing
                     </div>
-                    <p>• <strong>@ves.ac.in:</strong> Field Technician Portal</p>
-                    <p>• <strong>supervisor@... / @supervisor.ves.ac.in:</strong> Ward Supervisor</p>
+                    <p>• <strong>@ves.ac.in:</strong> Field Technician Portal (Assigned to your registered ward)</p>
+                    <p>• <strong>supervisor@... / @supervisor.ves.ac.in:</strong> Ward Supervisor (HQ Access)</p>
                     <p>• <strong>Other emails (Gmail, etc.):</strong> Resident Citizen Portal</p>
                 </div>
 
@@ -73,7 +76,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-3.5">
+                <form onSubmit={handleSubmit} className="space-y-3">
                     {isSignUp && (
                         <div>
                             <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Full Name</label>
@@ -105,6 +108,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                             />
                         </div>
                     </div>
+
+                    {/* Ask Ward ONLY for Citizen & Field Worker during Sign Up */}
+                    {isSignUp && !isSupervisor && (
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                                <span>{detectedRole === 'field_worker' ? 'Assigned Duty Ward *' : 'Residential Ward *'}</span>
+                            </label>
+                            <select
+                                value={selectedWard}
+                                onChange={(e) => setSelectedWard(e.target.value)}
+                                className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                            >
+                                {WARDS.map((w) => (
+                                    <option key={w} value={w}>{w}</option>
+                                ))}
+                            </select>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                {detectedRole === 'field_worker'
+                                    ? 'You will only receive dispatches for incidents reported in this ward.'
+                                    : 'Your default civic jurisdiction.'}
+                            </p>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Password</label>
