@@ -11,7 +11,8 @@ import {
     RotateCcw,
     Star,
     Users,
-    AlertCircle
+    AlertCircle,
+    ShieldAlert
 } from 'lucide-react';
 
 export interface SupervisorViewProps {
@@ -37,7 +38,6 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
             .eq('role', 'field_worker');
         if (data) {
             setWorkers(data);
-            if (data.length > 0) setSelectedWorkerId(data[0].id);
         }
     };
 
@@ -58,29 +58,37 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
         return true;
     });
 
-    // Filter workers available for the selected issue's ward
+    // STRICT FILTER: Only workers registered in the EXACT same ward as the issue
     const matchingWardWorkers = assigningIssue
         ? workers.filter(w => w.ward === assigningIssue.ward)
-        : workers;
+        : [];
+
+    const handleOpenAssignModal = (issue: any) => {
+        setErrorMessage(null);
+        const wardWorkers = workers.filter(w => w.ward === issue.ward);
+        setSelectedWorkerId(wardWorkers[0]?.id || '');
+        setAssigningIssue(issue);
+    };
 
     const handleAssignWorker = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!assigningIssue) return;
 
-        const workerId = selectedWorkerId || matchingWardWorkers[0]?.id || workers[0]?.id;
-        if (!workerId) {
-            setErrorMessage('No registered technician available to dispatch.');
+        // Strict validation: Worker must be in matchingWardWorkers
+        const worker = matchingWardWorkers.find(w => w.id === selectedWorkerId) || matchingWardWorkers[0];
+
+        if (!worker || worker.ward !== assigningIssue.ward) {
+            setErrorMessage(`Jurisdiction Mismatch: You can only assign technicians registered in ${assigningIssue.ward}.`);
             return;
         }
 
         setLoadingAction(true);
-        const worker = workers.find(w => w.id === workerId);
 
         try {
             const { error: updateErr } = await supabase
                 .from('issues')
                 .update({
-                    assigned_worker_id: workerId,
+                    assigned_worker_id: worker.id,
                     status: 'assigned',
                     updated_at: new Date().toISOString(),
                 })
@@ -91,7 +99,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
             await supabase.from('issue_timeline').insert({
                 issue_id: assigningIssue.id,
                 status: 'assigned',
-                message: `Dispatched to technician ${worker?.full_name || 'Worker'} (${worker?.ward || 'Assigned Ward'})`,
+                message: `Dispatched to ${worker.full_name} (${worker.ward})`,
                 actor_name: 'Ward Supervisor',
             });
 
@@ -265,10 +273,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
 
                                                 {!isResolved && (
                                                     <button
-                                                        onClick={() => {
-                                                            setErrorMessage(null);
-                                                            setAssigningIssue(issue);
-                                                        }}
+                                                        onClick={() => handleOpenAssignModal(issue)}
                                                         className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition active:scale-[0.98] shadow-xs shadow-blue-600/30"
                                                     >
                                                         <Send className="w-3 h-3" />
@@ -296,7 +301,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                         <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center">
                             <Users className="w-8 h-8 text-slate-400 mx-auto mb-2" />
                             <p className="text-xs font-bold text-slate-600">No field technicians registered yet.</p>
-                            <p className="text-[11px] text-slate-400 mt-0.5">Sign up with a @ves.ac.in email to register technicians.</p>
+                            <p className="text-[11px] text-slate-400 mt-0.5">Technicians must sign up with a @ves.ac.in email and select their assigned ward.</p>
                         </div>
                     ) : (
                         workers.map((worker) => (
@@ -307,8 +312,8 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                     </div>
                                     <div>
                                         <div className="text-sm font-bold text-slate-900">{worker.full_name}</div>
-                                        <div className="text-xs text-slate-500">{worker.ward}</div>
-                                        <div className="text-[10px] text-emerald-600 font-bold mt-0.5">● Available for Ward Assignment</div>
+                                        <div className="text-xs text-blue-600 font-bold">{worker.ward}</div>
+                                        <div className="text-[10px] text-emerald-600 font-bold mt-0.5">● Ready for Ward Dispatch</div>
                                     </div>
                                 </div>
 
@@ -325,14 +330,14 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                 </div>
             )}
 
-            {/* Dispatch Modal */}
+            {/* Dispatch Modal (Strict Ward Enforcement) */}
             {assigningIssue && (
                 <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 backdrop-blur-xs">
                     <div className="relative w-full max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl p-6 space-y-4 animate-slide-up">
                         <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                             <div>
                                 <h3 className="text-base font-extrabold text-slate-900">Dispatch Field Technician</h3>
-                                <p className="text-xs text-slate-500">Incident Ward: <strong>{assigningIssue.ward}</strong></p>
+                                <p className="text-xs text-slate-500">Incident Ward: <strong className="text-blue-600">{assigningIssue.ward}</strong></p>
                             </div>
                             <button onClick={() => setAssigningIssue(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full">
                                 <X className="w-5 h-5" />
@@ -351,6 +356,7 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                                     Select On-Duty Technician ({assigningIssue.ward}) *
                                 </label>
+
                                 {matchingWardWorkers.length > 0 ? (
                                     <select
                                         value={selectedWorkerId}
@@ -359,37 +365,33 @@ export const SupervisorView: React.FC<SupervisorViewProps> = ({ issues, activeTa
                                     >
                                         {matchingWardWorkers.map((w) => (
                                             <option key={w.id} value={w.id}>
-                                                {w.full_name} — {w.ward} ({w.badge_id || 'FW'})
+                                                {w.full_name} — {w.badge_id || 'FW'} ({w.department || 'Field Crew'})
                                             </option>
                                         ))}
                                     </select>
                                 ) : (
-                                    <div className="space-y-2">
-                                        <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
-                                            ⚠️ No technician registered specifically for <strong>{assigningIssue.ward}</strong>. You can dispatch from all active technicians:
+                                    <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl space-y-1.5 text-xs text-rose-800">
+                                        <div className="font-bold flex items-center gap-1.5 text-rose-900">
+                                            <ShieldAlert className="w-4 h-4 text-rose-600" />
+                                            <span>No Technicians in this Ward</span>
+                                        </div>
+                                        <p>
+                                            There are currently no registered field workers assigned to <strong>{assigningIssue.ward}</strong>.
                                         </p>
-                                        <select
-                                            value={selectedWorkerId}
-                                            onChange={(e) => setSelectedWorkerId(e.target.value)}
-                                            className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
-                                        >
-                                            {workers.map((w) => (
-                                                <option key={w.id} value={w.id}>
-                                                    {w.full_name} — {w.ward}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <p className="text-[11px] text-rose-600 font-medium">
+                                            Municipal policy restricts assigning technicians from other wards. Please have a technician register under {assigningIssue.ward} first.
+                                        </p>
                                     </div>
                                 )}
                             </div>
 
                             <button
                                 type="submit"
-                                disabled={loadingAction || workers.length === 0}
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 disabled:opacity-50"
+                                disabled={loadingAction || matchingWardWorkers.length === 0}
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl transition flex items-center justify-center gap-2 shadow-md shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {loadingAction && <Loader2 className="w-4 h-4 animate-spin" />}
-                                <span>{loadingAction ? 'Dispatching Crew...' : 'Confirm Dispatch'}</span>
+                                <span>{loadingAction ? 'Dispatching Crew...' : 'Confirm Ward Dispatch'}</span>
                             </button>
                         </form>
                     </div>
