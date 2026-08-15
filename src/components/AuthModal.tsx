@@ -30,7 +30,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         try {
             if (isSignUp) {
                 if (!fullName.trim()) throw new Error('Please enter your full name');
-                const { error: signUpError } = await signUp(email, password, fullName, isSupervisor ? undefined : selectedWard);
+                const { error: signUpError } = await signUp(
+                    email,
+                    password,
+                    fullName,
+                    isSupervisor ? undefined : selectedWard
+                );
                 if (signUpError) throw signUpError;
             } else {
                 const { error: signInError } = await signIn(email, password);
@@ -38,7 +43,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             }
             onClose();
         } catch (err: any) {
-            setError(err?.message || 'Authentication failed. Please verify credentials.');
+            setError(err?.message || 'Authentication failed. Please check your credentials.');
         } finally {
             setLoading(false);
         }
@@ -51,35 +56,38 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
                         <h2 className="text-lg font-bold text-slate-900">
-                            {isSignUp ? 'Create CityFix Account' : 'Welcome to CityFix'}
+                            {isSignUp ? 'Create CityFix Account' : 'Sign In to CityFix'}
                         </h2>
-                        <p className="text-xs text-slate-500">Official Municipal Grievance Network</p>
+                        <p className="text-xs text-slate-500">Municipal Civic Infrastructure Portal</p>
                     </div>
                     <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                <div className="bg-blue-50/60 border border-blue-100 rounded-2xl p-3 text-[11px] text-slate-700 space-y-1">
+                {/* Domain Guidance */}
+                <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-3 text-[11px] text-slate-700 space-y-1">
                     <div className="flex items-center gap-1 font-bold text-blue-900">
-                        <Info className="w-3.5 h-3.5 text-blue-600" /> Automatic Role Routing
+                        <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" /> Domain-Based Role Detection
                     </div>
-                    <p>• <strong>@ves.ac.in:</strong> Field Technician Portal (Assigned to your registered ward)</p>
-                    <p>• <strong>supervisor@... / @supervisor.ves.ac.in:</strong> Ward Supervisor (HQ Access)</p>
-                    <p>• <strong>Other emails (Gmail, etc.):</strong> Resident Citizen Portal</p>
+                    <p>• <strong>@ves.ac.in:</strong> Field Technician (assigned to selected ward)</p>
+                    <p>• <strong>@supervisor.ves.ac.in / supervisor@...:</strong> Ward Supervisor (HQ all-ward triage)</p>
+                    <p>• <strong>@gmail.com / others:</strong> Resident Citizen (grievance reports & tracking)</p>
                 </div>
 
                 {error && (
                     <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
                         <AlertCircle className="w-4 h-4 shrink-0" />
-                        <span>{error}</span>
+                        <span className="break-words">{error}</span>
                     </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-3">
+                <form onSubmit={handleSubmit} className="space-y-3.5">
                     {isSignUp && (
                         <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Full Name</label>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                                Full Name *
+                            </label>
                             <div className="relative">
                                 <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                                 <input
@@ -87,15 +95,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                     required
                                     value={fullName}
                                     onChange={(e) => setFullName(e.target.value)}
-                                    placeholder="e.g., Jane Doe"
-                                    className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                                    placeholder="e.g., Rajesh Sharma"
+                                    className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
                                 />
                             </div>
                         </div>
                     )}
 
                     <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Email Address</label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                            Email Address *
+                        </label>
                         <div className="relative">
                             <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                             <input
@@ -103,38 +113,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                placeholder="name@ves.ac.in or name@gmail.com"
-                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                                placeholder="resident@gmail.com, worker@ves.ac.in, or supervisor@ves.ac.in"
+                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
                             />
                         </div>
                     </div>
 
-                    {/* Ask Ward ONLY for Citizen & Field Worker during Sign Up */}
+                    {/* Ward Selection: ONLY hides when an actual @supervisor domain is entered */}
                     {isSignUp && !isSupervisor && (
-                        <div>
-                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1 flex items-center gap-1">
+                        <div className="space-y-1">
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1">
                                 <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                                <span>{detectedRole === 'field_worker' ? 'Assigned Duty Ward *' : 'Residential Ward *'}</span>
+                                <span>{detectedRole === 'field_worker' ? 'Assigned Field Ward *' : 'Residential Ward *'}</span>
                             </label>
                             <select
                                 value={selectedWard}
                                 onChange={(e) => setSelectedWard(e.target.value)}
-                                className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20"
                             >
                                 {WARDS.map((w) => (
                                     <option key={w} value={w}>{w}</option>
                                 ))}
                             </select>
-                            <p className="text-[10px] text-slate-400 mt-1">
+                            <p className="text-[10px] text-slate-400">
                                 {detectedRole === 'field_worker'
-                                    ? 'You will only receive dispatches for incidents reported in this ward.'
+                                    ? 'Dispatched work orders will filter by this ward.'
                                     : 'Your default civic jurisdiction.'}
                             </p>
                         </div>
                     )}
 
                     <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">Password</label>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1">
+                            Password *
+                        </label>
                         <div className="relative">
                             <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                             <input
@@ -143,7 +155,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="••••••••"
-                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 outline-none"
                             />
                         </div>
                     </div>
@@ -151,7 +163,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-blue-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-blue-600/30 transition flex items-center justify-center gap-2 disabled:opacity-50"
                     >
                         {loading && <Loader2 className="w-4 h-4 animate-spin" />}
                         <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
@@ -167,7 +179,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                         }}
                         className="text-xs font-bold text-blue-600 hover:underline"
                     >
-                        {isSignUp ? 'Already registered? Sign In' : "Don't have an account? Sign Up"}
+                        {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
                     </button>
                 </div>
             </div>

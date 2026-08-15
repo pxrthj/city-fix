@@ -36,24 +36,45 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Strict Domain Parser:
+ * - Checks the domain strictly AFTER the '@'
+ * - Supervisor: domain starts with 'supervisor.' (e.g. name@supervisor.ves.ac.in) or exact 'supervisor@ves.ac.in'
+ * - Field Worker: '@ves.ac.in' or '@worker.cityfix.in'
+ * - Citizen: '@gmail.com', '@yahoo.com', or any incomplete input
+ */
 export function determineRoleFromEmail(email: string): UserRole {
     const normalized = email.toLowerCase().trim();
+
+    // While typing or if no '@' is present, default to citizen (keeps ward dropdown visible)
+    if (!normalized.includes('@')) {
+        return 'citizen';
+    }
+
+    const parts = normalized.split('@');
+    const domain = parts[1] || '';
+
+    // 1. Supervisor Domain Matching
     if (
-        normalized.endsWith('@supervisor.ves.ac.in') ||
-        normalized.endsWith('@supervisor.cityfix.in') ||
-        normalized.startsWith('supervisor') ||
-        normalized.includes('+supervisor@')
+        domain.startsWith('supervisor.') ||
+        domain === 'supervisor.ves.ac.in' ||
+        domain === 'supervisor.cityfix.in' ||
+        normalized === 'supervisor@ves.ac.in' ||
+        normalized === 'supervisor@cityfix.in'
     ) {
         return 'supervisor';
     }
+
+    // 2. Field Worker Domain Matching
     if (
-        normalized.endsWith('@ves.ac.in') ||
-        normalized.endsWith('@worker.cityfix.in') ||
-        normalized.startsWith('worker') ||
-        normalized.includes('+worker@')
+        domain === 'ves.ac.in' ||
+        domain === 'worker.cityfix.in' ||
+        domain.startsWith('worker.')
     ) {
         return 'field_worker';
     }
+
+    // 3. Citizen (Default for all other domains)
     return 'citizen';
 }
 
